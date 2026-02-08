@@ -1,948 +1,1161 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dual Life RPG</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
+import React, { useState, useEffect, useRef } from 'react';
+import { Shield, Zap, Home, Briefcase, ShoppingCart, Save, Trash2, Plus } from 'lucide-react';
+
+const DualLifeRPG = () => {
+  // Save System State
+  const [saveSlots, setSaveSlots] = useState([]);
+  const [currentSaveSlot, setCurrentSaveSlot] = useState(null);
+  const [showSaveMenu, setShowSaveMenu] = useState(true);
+  const [showNewSaveDialog, setShowNewSaveDialog] = useState(false);
+  const [newSaveName, setNewSaveName] = useState('');
+
+  // Player State
+  const [player, setPlayer] = useState({
+    name: "Alex",
+    level: 1,
+    xp: 0,
+    xpToNext: 100,
+    health: 100,
+    maxHealth: 100,
+    energy: 100,
+    maxEnergy: 100,
+    money: 500,
+    strength: 10,
+    defense: 5,
+    agility: 8,
+    position: { x: 400, y: 300 },
+    isHero: false,
+    heroName: "Shadow Strike"
+  });
+
+  const [inventory, setInventory] = useState([
+    { id: 1, name: "Basic Suit", type: "armor", defense: 3, equipped: false, price: 0 },
+    { id: 2, name: "Energy Bar", type: "consumable", energyRestore: 30, quantity: 3, price: 20 }
+  ]);
+
+  const [powers, setPowers] = useState([
+    { id: 1, name: "Energy Blast", damage: 25, energyCost: 20, unlocked: true, level: 1 },
+    { id: 2, name: "Shield Barrier", defense: 15, energyCost: 25, unlocked: false, level: 0 },
+    { id: 3, name: "Lightning Strike", damage: 40, energyCost: 35, unlocked: false, level: 0 }
+  ]);
+
+  const [apartment, setApartment] = useState({
+    furniture: [],
+    bonuses: { energy: 0, money: 0 }
+  });
+
+  const [enemies, setEnemies] = useState([]);
+  const [combat, setCombat] = useState(null);
+  const [qteActive, setQteActive] = useState(null);
+  const [gameScreen, setGameScreen] = useState('menu');
+  const [message, setMessage] = useState('');
+  const [dailyEvent, setDailyEvent] = useState(null);
+  const [playTime, setPlayTime] = useState(0);
+
+  const enemyTypes = [
+    { type: 'thug', name: 'Street Thug', health: 50, damage: 10, xp: 30, color: '#8B4513', speed: 1, hasAttack: true },
+    { type: 'mutant', name: 'Mutant', health: 80, damage: 15, xp: 50, color: '#228B22', speed: 1.5, hasAttack: true },
+    { type: 'robot', name: 'Security Bot', health: 100, damage: 20, xp: 70, color: '#4169E1', speed: 0.8, hasAttack: true }
+  ];
+
+  const shopItems = [
+    { id: 10, name: "Combat Suit", type: "armor", defense: 8, price: 300 },
+    { id: 11, name: "Power Gauntlets", type: "weapon", strength: 12, price: 400 },
+    { id: 12, name: "Energy Booster", type: "gadget", maxEnergy: 20, price: 250 },
+    { id: 13, name: "Health Pack", type: "consumable", healthRestore: 50, quantity: 1, price: 50 },
+    { id: 14, name: "Energy Bar", type: "consumable", energyRestore: 30, quantity: 1, price: 20 }
+  ];
+
+  const furnitureItems = [
+    { id: 20, name: "Comfy Bed", bonus: { energy: 10 }, price: 200 },
+    { id: 21, name: "Work Desk", bonus: { money: 5 }, price: 150 },
+    { id: 22, name: "Training Dummy", bonus: { strength: 2 }, price: 300 }
+  ];
+
+  const jobs = [
+    { name: "Delivery Driver", pay: 50, energyCost: 20, duration: "Quick" },
+    { name: "Office Work", pay: 100, energyCost: 30, duration: "Half Day" },
+    { name: "Night Security", pay: 150, energyCost: 40, duration: "Full Day" }
+  ];
+
+  // Load save slots on mount
+  useEffect(() => {
+    loadSaveSlots();
+  }, []);
+
+  // Play time tracker
+  useEffect(() => {
+    if (currentSaveSlot !== null && !showSaveMenu) {
+      const interval = setInterval(() => {
+        setPlayTime(prev => prev + 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [currentSaveSlot, showSaveMenu]);
+
+  // Auto-save every 30 seconds
+  useEffect(() => {
+    if (currentSaveSlot !== null && !showSaveMenu) {
+      const autoSaveInterval = setInterval(() => {
+        saveGame();
+      }, 30000);
+      return () => clearInterval(autoSaveInterval);
+    }
+  }, [currentSaveSlot, showSaveMenu, player, inventory, powers, apartment, playTime]);
+
+  const loadSaveSlots = () => {
+    const saved = localStorage.getItem('novaSentinelSaves');
+    if (saved) {
+      setSaveSlots(JSON.parse(saved));
+    }
+  };
+
+  const createNewSave = () => {
+    if (newSaveName.trim() === '') {
+      showMessage("Please enter a save name!");
+      return;
+    }
+
+    if (saveSlots.length >= 4) {
+      showMessage("Maximum 4 save slots!");
+      return;
+    }
+
+    const newSlot = {
+      id: Date.now(),
+      name: newSaveName.trim(),
+      createdAt: new Date().toISOString(),
+      lastPlayed: new Date().toISOString(),
+      playTime: 0,
+      gameState: {
+        player,
+        inventory,
+        powers,
+        apartment,
+        playTime: 0
+      }
+    };
+
+    const updatedSlots = [...saveSlots, newSlot];
+    setSaveSlots(updatedSlots);
+    localStorage.setItem('novaSentinelSaves', JSON.stringify(updatedSlots));
+    
+    setCurrentSaveSlot(newSlot.id);
+    setShowSaveMenu(false);
+    setShowNewSaveDialog(false);
+    setNewSaveName('');
+    setGameScreen('menu');
+    showMessage(`New save "${newSlot.name}" created!`);
+  };
+
+  const loadSave = (slotId) => {
+    const slot = saveSlots.find(s => s.id === slotId);
+    if (!slot) return;
+
+    setPlayer(slot.gameState.player);
+    setInventory(slot.gameState.inventory);
+    setPowers(slot.gameState.powers);
+    setApartment(slot.gameState.apartment);
+    setPlayTime(slot.gameState.playTime || 0);
+    
+    setCurrentSaveSlot(slotId);
+    setShowSaveMenu(false);
+    setGameScreen('menu');
+    showMessage(`Loaded save: ${slot.name}`);
+  };
+
+  const saveGame = () => {
+    if (currentSaveSlot === null) return;
+
+    const updatedSlots = saveSlots.map(slot => {
+      if (slot.id === currentSaveSlot) {
+        return {
+          ...slot,
+          lastPlayed: new Date().toISOString(),
+          gameState: {
+            player,
+            inventory,
+            powers,
+            apartment,
+            playTime
+          }
+        };
+      }
+      return slot;
+    });
+
+    setSaveSlots(updatedSlots);
+    localStorage.setItem('novaSentinelSaves', JSON.stringify(updatedSlots));
+    showMessage("Game saved!");
+  };
+
+  const deleteSave = (slotId) => {
+    if (!confirm("Are you sure you want to delete this save?")) return;
+
+    const updatedSlots = saveSlots.filter(s => s.id !== slotId);
+    setSaveSlots(updatedSlots);
+    localStorage.setItem('novaSentinelSaves', JSON.stringify(updatedSlots));
+    
+    if (currentSaveSlot === slotId) {
+      setCurrentSaveSlot(null);
+      setShowSaveMenu(true);
+      setGameScreen('menu');
+    }
+    
+    showMessage("Save deleted!");
+  };
+
+  const returnToSaveMenu = () => {
+    if (confirm("Return to save menu? Make sure your game is saved!")) {
+      saveGame();
+      setShowSaveMenu(true);
+      setCurrentSaveSlot(null);
+      setGameScreen('menu');
+    }
+  };
+
+  const formatPlayTime = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
+  const formatDate = (isoString) => {
+    const date = new Date(isoString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // [Rest of the game logic remains the same...]
+  useEffect(() => {
+    if (gameScreen === 'hero' && enemies.length === 0) {
+      spawnEnemies();
+    }
+  }, [gameScreen]);
+
+  const spawnEnemies = () => {
+    const newEnemies = [];
+    const numEnemies = 3 + Math.floor(player.level / 2);
+    
+    for (let i = 0; i < numEnemies; i++) {
+      const template = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+      newEnemies.push({
+        ...template,
+        id: Date.now() + i,
+        health: template.health,
+        maxHealth: template.health,
+        x: Math.random() * 700 + 50,
+        y: Math.random() * 500 + 50,
+        patrolDirection: Math.random() * Math.PI * 2,
+        state: 'patrol'
+      });
+    }
+    
+    setEnemies(newEnemies);
+  };
+
+  useEffect(() => {
+    if (gameScreen === 'normal' && !dailyEvent) {
+      if (Math.random() < 0.3) {
+        triggerDailyEvent();
+      }
+    }
+  }, [gameScreen]);
+
+  const triggerDailyEvent = () => {
+    const events = [
+      { text: "You found $50 on the street!", effect: { money: 50 } },
+      { text: "A good night's sleep restored your energy!", effect: { energy: 30 } },
+      { text: "Crime alert nearby! Hero opportunity!", effect: { heroCall: true } },
+      { text: "Bills arrived. -$30", effect: { money: -30 } },
+      { text: "Exhausting day at work...", effect: { energy: -20 } }
+    ];
+    
+    const event = events[Math.floor(Math.random() * events.length)];
+    setDailyEvent(event);
+    
+    if (event.effect.money) {
+      setPlayer(p => ({ ...p, money: Math.max(0, p.money + event.effect.money) }));
+    }
+    if (event.effect.energy) {
+      setPlayer(p => ({ ...p, energy: Math.min(p.maxEnergy, Math.max(0, p.energy + event.effect.energy)) }));
+    }
+  };
+
+  const levelUp = () => {
+    setPlayer(p => ({
+      ...p,
+      level: p.level + 1,
+      maxHealth: p.maxHealth + 20,
+      health: p.maxHealth + 20,
+      maxEnergy: p.maxEnergy + 10,
+      energy: p.maxEnergy + 10,
+      strength: p.strength + 3,
+      defense: p.defense + 2,
+      agility: p.agility + 2,
+      xp: p.xp - p.xpToNext,
+      xpToNext: Math.floor(p.xpToNext * 1.5)
+    }));
+    
+    if (player.level === 3) {
+      setPowers(p => p.map(pow => pow.id === 2 ? { ...pow, unlocked: true } : pow));
+      showMessage("New Power Unlocked: Shield Barrier!");
+    }
+    if (player.level === 5) {
+      setPowers(p => p.map(pow => pow.id === 3 ? { ...pow, unlocked: true } : pow));
+      showMessage("New Power Unlocked: Lightning Strike!");
+    }
+    
+    showMessage(`Level Up! Now Level ${player.level + 1}`);
+  };
+
+  useEffect(() => {
+    if (player.xp >= player.xpToNext) {
+      levelUp();
+    }
+  }, [player.xp]);
+
+  const startCombat = (enemy) => {
+    setCombat({
+      enemy: { ...enemy },
+      turn: 'player',
+      playerAction: null,
+      log: [`Combat started with ${enemy.name}!`]
+    });
+  };
+
+  const performPlayerAttack = (type, power = null) => {
+    if (!combat) return;
+    
+    let damage = 0;
+    let energyCost = 0;
+    
+    if (type === 'basic') {
+      damage = player.strength + Math.floor(Math.random() * 10);
+    } else if (type === 'power' && power) {
+      if (player.energy < power.energyCost) {
+        addCombatLog("Not enough energy!");
+        return;
+      }
+      damage = power.damage + player.strength;
+      energyCost = power.energyCost;
+    }
+    
+    const newEnemyHealth = Math.max(0, combat.enemy.health - damage);
+    
+    setCombat(c => ({
+      ...c,
+      enemy: { ...c.enemy, health: newEnemyHealth },
+      log: [...c.log, `You dealt ${damage} damage!`]
+    }));
+    
+    setPlayer(p => ({ ...p, energy: p.energy - energyCost }));
+    
+    if (newEnemyHealth <= 0) {
+      endCombat(true);
+    } else {
+      setTimeout(() => enemyTurn(), 1000);
+    }
+  };
+
+  const enemyTurn = () => {
+    if (!combat || !combat.enemy.hasAttack) {
+      setCombat(c => ({ ...c, turn: 'player' }));
+      return;
+    }
+    
+    if (Math.random() < 0.6) {
+      const qteKeys = ['A', 'S', 'D', 'W', 'Q', 'E'];
+      const randomKey = qteKeys[Math.floor(Math.random() * qteKeys.length)];
+      const qteType = Math.random() < 0.5 ? 'dodge' : 'block';
+      
+      setQteActive({
+        key: randomKey,
+        type: qteType,
+        timeLeft: 2000,
+        startTime: Date.now()
+      });
+    } else {
+      executeEnemyAttack(false, false);
+    }
+  };
+
+  const executeEnemyAttack = (dodged, blocked) => {
+    if (!combat) return;
+    
+    let damage = combat.enemy.damage;
+    
+    if (dodged) {
+      damage = 0;
+      addCombatLog(`You dodged the attack!`);
+    } else if (blocked) {
+      damage = Math.max(0, damage - player.defense);
+      addCombatLog(`You blocked! Damage reduced to ${damage}`);
+    } else {
+      damage = Math.max(0, damage - Math.floor(player.defense / 2));
+      addCombatLog(`${combat.enemy.name} hit you for ${damage} damage!`);
+    }
+    
+    const newPlayerHealth = Math.max(0, player.health - damage);
+    setPlayer(p => ({ ...p, health: newPlayerHealth }));
+    
+    if (newPlayerHealth <= 0) {
+      endCombat(false);
+    } else {
+      setCombat(c => ({ ...c, turn: 'player' }));
+    }
+  };
+
+  const addCombatLog = (text) => {
+    setCombat(c => c ? { ...c, log: [...c.log.slice(-4), text] } : null);
+  };
+
+  const endCombat = (victory) => {
+    if (victory) {
+      const xpGain = combat.enemy.xp;
+      const moneyDrop = Math.floor(Math.random() * 50) + 20;
+      
+      setPlayer(p => ({
+        ...p,
+        xp: p.xp + xpGain,
+        money: p.money + moneyDrop
+      }));
+      
+      setEnemies(e => e.filter(en => en.id !== combat.enemy.id));
+      showMessage(`Victory! +${xpGain} XP, +$${moneyDrop}`);
+      
+      if (Math.random() < 0.3) {
+        const drop = shopItems[Math.floor(Math.random() * shopItems.length)];
+        const newItem = { ...drop, id: Date.now(), quantity: drop.quantity || 1 };
+        setInventory(inv => [...inv, newItem]);
+        showMessage(`Found: ${drop.name}!`);
+      }
+    } else {
+      setPlayer(p => ({ ...p, health: Math.floor(p.maxHealth * 0.3) }));
+      showMessage("Defeated! Retreating to safety...");
+      setGameScreen('normal');
+    }
+    
+    setCombat(null);
+    setQteActive(null);
+  };
+
+  useEffect(() => {
+    if (!qteActive) return;
+    
+    const handleQTE = (e) => {
+      if (e.key.toLowerCase() === qteActive.key.toLowerCase()) {
+        executeEnemyAttack(qteActive.type === 'dodge', qteActive.type === 'block');
+        setQteActive(null);
+      }
+    };
+    
+    window.addEventListener('keydown', handleQTE);
+    
+    const timeout = setTimeout(() => {
+      if (qteActive) {
+        executeEnemyAttack(false, false);
+        setQteActive(null);
+      }
+    }, qteActive.timeLeft);
+    
+    return () => {
+      window.removeEventListener('keydown', handleQTE);
+      clearTimeout(timeout);
+    };
+  }, [qteActive]);
+
+  const buyItem = (item) => {
+    if (player.money >= item.price) {
+      setPlayer(p => ({ ...p, money: p.money - item.price }));
+      const newItem = { ...item, id: Date.now(), quantity: item.quantity || 1 };
+      setInventory(inv => [...inv, newItem]);
+      showMessage(`Purchased ${item.name}!`);
+    } else {
+      showMessage("Not enough money!");
+    }
+  };
+
+  const equipItem = (item) => {
+    if (item.type === 'consumable') {
+      useConsumable(item);
+      return;
+    }
+    
+    setInventory(inv => inv.map(i => {
+      if (i.type === item.type && i.equipped) return { ...i, equipped: false };
+      if (i.id === item.id) return { ...i, equipped: true };
+      return i;
+    }));
+    
+    updatePlayerStats();
+    showMessage(`Equipped ${item.name}!`);
+  };
+
+  const useConsumable = (item) => {
+    if (item.healthRestore) {
+      setPlayer(p => ({ ...p, health: Math.min(p.maxHealth, p.health + item.healthRestore) }));
+    }
+    if (item.energyRestore) {
+      setPlayer(p => ({ ...p, energy: Math.min(p.maxEnergy, p.energy + item.energyRestore) }));
+    }
+    
+    setInventory(inv => inv.map(i => {
+      if (i.id === item.id) {
+        if (i.quantity > 1) return { ...i, quantity: i.quantity - 1 };
+        return null;
+      }
+      return i;
+    }).filter(Boolean));
+    
+    showMessage(`Used ${item.name}!`);
+  };
+
+  const updatePlayerStats = () => {
+    let bonusStr = 0, bonusDef = 0, bonusEnergy = 0;
+    
+    inventory.filter(i => i.equipped).forEach(item => {
+      bonusStr += item.strength || 0;
+      bonusDef += item.defense || 0;
+      bonusEnergy += item.maxEnergy || 0;
+    });
+    
+    setPlayer(p => ({
+      ...p,
+      strength: 10 + (p.level - 1) * 3 + bonusStr,
+      defense: 5 + (p.level - 1) * 2 + bonusDef,
+      maxEnergy: 100 + (p.level - 1) * 10 + bonusEnergy
+    }));
+  };
+
+  const doJob = (job) => {
+    if (player.energy >= job.energyCost) {
+      setPlayer(p => ({
+        ...p,
+        money: p.money + job.pay,
+        energy: p.energy - job.energyCost
+      }));
+      showMessage(`Completed ${job.name}! Earned $${job.pay}`);
+    } else {
+      showMessage("Not enough energy!");
+    }
+  };
+
+  const buyFurniture = (item) => {
+    if (player.money >= item.price) {
+      setPlayer(p => ({ ...p, money: p.money - item.price }));
+      setApartment(a => ({
+        furniture: [...a.furniture, { ...item, id: Date.now() }],
+        bonuses: {
+          energy: a.bonuses.energy + (item.bonus.energy || 0),
+          money: a.bonuses.money + (item.bonus.money || 0)
         }
-        #root {
-            width: 100%;
-            height: 100vh;
-        }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
+      }));
+      showMessage(`Purchased ${item.name}!`);
+    } else {
+      showMessage("Not enough money!");
+    }
+  };
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+  const rest = () => {
+    const energyRestore = 50 + apartment.bonuses.energy;
+    setPlayer(p => ({
+      ...p,
+      energy: Math.min(p.maxEnergy, p.energy + energyRestore),
+      health: Math.min(p.maxHealth, p.health + 20)
+    }));
+    showMessage(`Rested. Restored ${energyRestore} energy and 20 health!`);
+  };
 
-        // Lucide React Icons as inline SVGs
-        const Shield = ({ size = 24, ...props }) => (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-            </svg>
-        );
+  const showMessage = (text) => {
+    setMessage(text);
+    setTimeout(() => setMessage(''), 3000);
+  };
 
-        const Zap = ({ size = 24, ...props }) => (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-        );
-
-        const Home = ({ size = 24, ...props }) => (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-            </svg>
-        );
-
-        const Briefcase = ({ size = 24, ...props }) => (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-                <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-            </svg>
-        );
-
-        const ShoppingCart = ({ size = 24, ...props }) => (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-                <circle cx="9" cy="21" r="1"></circle>
-                <circle cx="20" cy="21" r="1"></circle>
-                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
-            </svg>
-        );
-
-        const DualLifeRPG = () => {
-          // Player State
-          const [player, setPlayer] = useState({
-            name: "Alex",
-            level: 1,
-            xp: 0,
-            xpToNext: 100,
-            health: 100,
-            maxHealth: 100,
-            energy: 100,
-            maxEnergy: 100,
-            money: 500,
-            strength: 10,
-            defense: 5,
-            agility: 8,
-            position: { x: 400, y: 300 },
-            isHero: false,
-            heroName: "Shadow Strike"
-          });
-
-          const [inventory, setInventory] = useState([
-            { id: 1, name: "Basic Suit", type: "armor", defense: 3, equipped: false, price: 0 },
-            { id: 2, name: "Energy Bar", type: "consumable", energyRestore: 30, quantity: 3, price: 20 }
-          ]);
-
-          const [powers, setPowers] = useState([
-            { id: 1, name: "Energy Blast", damage: 25, energyCost: 20, unlocked: true, level: 1 },
-            { id: 2, name: "Shield Barrier", defense: 15, energyCost: 25, unlocked: false, level: 0 },
-            { id: 3, name: "Lightning Strike", damage: 40, energyCost: 35, unlocked: false, level: 0 }
-          ]);
-
-          const [apartment, setApartment] = useState({
-            furniture: [],
-            bonuses: { energy: 0, money: 0 }
-          });
-
-          const [enemies, setEnemies] = useState([]);
-          const [combat, setCombat] = useState(null);
-          const [qteActive, setQteActive] = useState(null);
-          const [gameScreen, setGameScreen] = useState('menu');
-          const [message, setMessage] = useState('');
-          const [dailyEvent, setDailyEvent] = useState(null);
-
-          const enemyTypes = [
-            { type: 'thug', name: 'Street Thug', health: 50, damage: 10, xp: 30, color: '#8B4513', speed: 1, hasAttack: true },
-            { type: 'mutant', name: 'Mutant', health: 80, damage: 15, xp: 50, color: '#228B22', speed: 1.5, hasAttack: true },
-            { type: 'robot', name: 'Security Bot', health: 100, damage: 20, xp: 70, color: '#4169E1', speed: 0.8, hasAttack: true }
-          ];
-
-          const shopItems = [
-            { id: 10, name: "Combat Suit", type: "armor", defense: 8, price: 300 },
-            { id: 11, name: "Power Gauntlets", type: "weapon", strength: 12, price: 400 },
-            { id: 12, name: "Energy Booster", type: "gadget", maxEnergy: 20, price: 250 },
-            { id: 13, name: "Health Pack", type: "consumable", healthRestore: 50, quantity: 1, price: 50 },
-            { id: 14, name: "Energy Bar", type: "consumable", energyRestore: 30, quantity: 1, price: 20 }
-          ];
-
-          const furnitureItems = [
-            { id: 20, name: "Comfy Bed", bonus: { energy: 10 }, price: 200 },
-            { id: 21, name: "Work Desk", bonus: { money: 5 }, price: 150 },
-            { id: 22, name: "Training Dummy", bonus: { strength: 2 }, price: 300 }
-          ];
-
-          const jobs = [
-            { name: "Delivery Driver", pay: 50, energyCost: 20, duration: "Quick" },
-            { name: "Office Work", pay: 100, energyCost: 30, duration: "Half Day" },
-            { name: "Night Security", pay: 150, energyCost: 40, duration: "Full Day" }
-          ];
-
-          useEffect(() => {
-            if (gameScreen === 'hero' && enemies.length === 0) {
-              spawnEnemies();
-            }
-          }, [gameScreen]);
-
-          const spawnEnemies = () => {
-            const newEnemies = [];
-            const numEnemies = 3 + Math.floor(player.level / 2);
-            
-            for (let i = 0; i < numEnemies; i++) {
-              const template = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
-              newEnemies.push({
-                ...template,
-                id: Date.now() + i,
-                health: template.health,
-                maxHealth: template.health,
-                x: Math.random() * 700 + 50,
-                y: Math.random() * 500 + 50,
-                patrolDirection: Math.random() * Math.PI * 2,
-                state: 'patrol'
-              });
-            }
-            
-            setEnemies(newEnemies);
-          };
-
-          useEffect(() => {
-            if (gameScreen === 'normal' && !dailyEvent) {
-              if (Math.random() < 0.3) {
-                triggerDailyEvent();
-              }
-            }
-          }, [gameScreen]);
-
-          const triggerDailyEvent = () => {
-            const events = [
-              { text: "You found $50 on the street!", effect: { money: 50 } },
-              { text: "A good night's sleep restored your energy!", effect: { energy: 30 } },
-              { text: "Crime alert nearby! Hero opportunity!", effect: { heroCall: true } },
-              { text: "Bills arrived. -$30", effect: { money: -30 } },
-              { text: "Exhausting day at work...", effect: { energy: -20 } }
-            ];
-            
-            const event = events[Math.floor(Math.random() * events.length)];
-            setDailyEvent(event);
-            
-            if (event.effect.money) {
-              setPlayer(p => ({ ...p, money: Math.max(0, p.money + event.effect.money) }));
-            }
-            if (event.effect.energy) {
-              setPlayer(p => ({ ...p, energy: Math.min(p.maxEnergy, Math.max(0, p.energy + event.effect.energy)) }));
-            }
-          };
-
-          const levelUp = () => {
-            setPlayer(p => ({
-              ...p,
-              level: p.level + 1,
-              maxHealth: p.maxHealth + 20,
-              health: p.maxHealth + 20,
-              maxEnergy: p.maxEnergy + 10,
-              energy: p.maxEnergy + 10,
-              strength: p.strength + 3,
-              defense: p.defense + 2,
-              agility: p.agility + 2,
-              xp: p.xp - p.xpToNext,
-              xpToNext: Math.floor(p.xpToNext * 1.5)
-            }));
-            
-            if (player.level === 3) {
-              setPowers(p => p.map(pow => pow.id === 2 ? { ...pow, unlocked: true } : pow));
-              showMessage("New Power Unlocked: Shield Barrier!");
-            }
-            if (player.level === 5) {
-              setPowers(p => p.map(pow => pow.id === 3 ? { ...pow, unlocked: true } : pow));
-              showMessage("New Power Unlocked: Lightning Strike!");
-            }
-            
-            showMessage(`Level Up! Now Level ${player.level + 1}`);
-          };
-
-          useEffect(() => {
-            if (player.xp >= player.xpToNext) {
-              levelUp();
-            }
-          }, [player.xp]);
-
-          const startCombat = (enemy) => {
-            setCombat({
-              enemy: { ...enemy },
-              turn: 'player',
-              playerAction: null,
-              log: [`Combat started with ${enemy.name}!`]
-            });
-          };
-
-          const performPlayerAttack = (type, power = null) => {
-            if (!combat) return;
-            
-            let damage = 0;
-            let energyCost = 0;
-            
-            if (type === 'basic') {
-              damage = player.strength + Math.floor(Math.random() * 10);
-            } else if (type === 'power' && power) {
-              if (player.energy < power.energyCost) {
-                addCombatLog("Not enough energy!");
-                return;
-              }
-              damage = power.damage + player.strength;
-              energyCost = power.energyCost;
-            }
-            
-            const newEnemyHealth = Math.max(0, combat.enemy.health - damage);
-            
-            setCombat(c => ({
-              ...c,
-              enemy: { ...c.enemy, health: newEnemyHealth },
-              log: [...c.log, `You dealt ${damage} damage!`]
-            }));
-            
-            setPlayer(p => ({ ...p, energy: p.energy - energyCost }));
-            
-            if (newEnemyHealth <= 0) {
-              endCombat(true);
-            } else {
-              setTimeout(() => enemyTurn(), 1000);
-            }
-          };
-
-          const enemyTurn = () => {
-            if (!combat || !combat.enemy.hasAttack) {
-              setCombat(c => ({ ...c, turn: 'player' }));
-              return;
-            }
-            
-            if (Math.random() < 0.6) {
-              const qteKeys = ['A', 'S', 'D', 'W', 'Q', 'E'];
-              const randomKey = qteKeys[Math.floor(Math.random() * qteKeys.length)];
-              const qteType = Math.random() < 0.5 ? 'dodge' : 'block';
-              
-              setQteActive({
-                key: randomKey,
-                type: qteType,
-                timeLeft: 2000,
-                startTime: Date.now()
-              });
-            } else {
-              executeEnemyAttack(false, false);
-            }
-          };
-
-          const executeEnemyAttack = (dodged, blocked) => {
-            if (!combat) return;
-            
-            let damage = combat.enemy.damage;
-            
-            if (dodged) {
-              damage = 0;
-              addCombatLog(`You dodged the attack!`);
-            } else if (blocked) {
-              damage = Math.max(0, damage - player.defense);
-              addCombatLog(`You blocked! Damage reduced to ${damage}`);
-            } else {
-              damage = Math.max(0, damage - Math.floor(player.defense / 2));
-              addCombatLog(`${combat.enemy.name} hit you for ${damage} damage!`);
-            }
-            
-            const newPlayerHealth = Math.max(0, player.health - damage);
-            setPlayer(p => ({ ...p, health: newPlayerHealth }));
-            
-            if (newPlayerHealth <= 0) {
-              endCombat(false);
-            } else {
-              setCombat(c => ({ ...c, turn: 'player' }));
-            }
-          };
-
-          const addCombatLog = (text) => {
-            setCombat(c => c ? { ...c, log: [...c.log.slice(-4), text] } : null);
-          };
-
-          const endCombat = (victory) => {
-            if (victory) {
-              const xpGain = combat.enemy.xp;
-              const moneyDrop = Math.floor(Math.random() * 50) + 20;
-              
-              setPlayer(p => ({
-                ...p,
-                xp: p.xp + xpGain,
-                money: p.money + moneyDrop
-              }));
-              
-              setEnemies(e => e.filter(en => en.id !== combat.enemy.id));
-              showMessage(`Victory! +${xpGain} XP, +$${moneyDrop}`);
-              
-              if (Math.random() < 0.3) {
-                const drop = shopItems[Math.floor(Math.random() * shopItems.length)];
-                const newItem = { ...drop, id: Date.now(), quantity: drop.quantity || 1 };
-                setInventory(inv => [...inv, newItem]);
-                showMessage(`Found: ${drop.name}!`);
-              }
-            } else {
-              setPlayer(p => ({ ...p, health: Math.floor(p.maxHealth * 0.3) }));
-              showMessage("Defeated! Retreating to safety...");
-              setGameScreen('normal');
-            }
-            
-            setCombat(null);
-            setQteActive(null);
-          };
-
-          useEffect(() => {
-            if (!qteActive) return;
-            
-            const handleQTE = (e) => {
-              if (e.key.toLowerCase() === qteActive.key.toLowerCase()) {
-                const success = qteActive.type === 'dodge' ? true : true;
-                executeEnemyAttack(qteActive.type === 'dodge', qteActive.type === 'block');
-                setQteActive(null);
-              }
-            };
-            
-            window.addEventListener('keydown', handleQTE);
-            
-            const timeout = setTimeout(() => {
-              if (qteActive) {
-                executeEnemyAttack(false, false);
-                setQteActive(null);
-              }
-            }, qteActive.timeLeft);
-            
-            return () => {
-              window.removeEventListener('keydown', handleQTE);
-              clearTimeout(timeout);
-            };
-          }, [qteActive]);
-
-          const buyItem = (item) => {
-            if (player.money >= item.price) {
-              setPlayer(p => ({ ...p, money: p.money - item.price }));
-              const newItem = { ...item, id: Date.now(), quantity: item.quantity || 1 };
-              setInventory(inv => [...inv, newItem]);
-              showMessage(`Purchased ${item.name}!`);
-            } else {
-              showMessage("Not enough money!");
-            }
-          };
-
-          const equipItem = (item) => {
-            if (item.type === 'consumable') {
-              useConsumable(item);
-              return;
-            }
-            
-            setInventory(inv => inv.map(i => {
-              if (i.type === item.type && i.equipped) return { ...i, equipped: false };
-              if (i.id === item.id) return { ...i, equipped: true };
-              return i;
-            }));
-            
-            updatePlayerStats();
-            showMessage(`Equipped ${item.name}!`);
-          };
-
-          const useConsumable = (item) => {
-            if (item.healthRestore) {
-              setPlayer(p => ({ ...p, health: Math.min(p.maxHealth, p.health + item.healthRestore) }));
-            }
-            if (item.energyRestore) {
-              setPlayer(p => ({ ...p, energy: Math.min(p.maxEnergy, p.energy + item.energyRestore) }));
-            }
-            
-            setInventory(inv => inv.map(i => {
-              if (i.id === item.id) {
-                if (i.quantity > 1) return { ...i, quantity: i.quantity - 1 };
-                return null;
-              }
-              return i;
-            }).filter(Boolean));
-            
-            showMessage(`Used ${item.name}!`);
-          };
-
-          const updatePlayerStats = () => {
-            let bonusStr = 0, bonusDef = 0, bonusEnergy = 0;
-            
-            inventory.filter(i => i.equipped).forEach(item => {
-              bonusStr += item.strength || 0;
-              bonusDef += item.defense || 0;
-              bonusEnergy += item.maxEnergy || 0;
-            });
-            
-            setPlayer(p => ({
-              ...p,
-              strength: 10 + (p.level - 1) * 3 + bonusStr,
-              defense: 5 + (p.level - 1) * 2 + bonusDef,
-              maxEnergy: 100 + (p.level - 1) * 10 + bonusEnergy
-            }));
-          };
-
-          const doJob = (job) => {
-            if (player.energy >= job.energyCost) {
-              setPlayer(p => ({
-                ...p,
-                money: p.money + job.pay,
-                energy: p.energy - job.energyCost
-              }));
-              showMessage(`Completed ${job.name}! Earned $${job.pay}`);
-            } else {
-              showMessage("Not enough energy!");
-            }
-          };
-
-          const buyFurniture = (item) => {
-            if (player.money >= item.price) {
-              setPlayer(p => ({ ...p, money: p.money - item.price }));
-              setApartment(a => ({
-                furniture: [...a.furniture, { ...item, id: Date.now() }],
-                bonuses: {
-                  energy: a.bonuses.energy + (item.bonus.energy || 0),
-                  money: a.bonuses.money + (item.bonus.money || 0)
-                }
-              }));
-              showMessage(`Purchased ${item.name}!`);
-            } else {
-              showMessage("Not enough money!");
-            }
-          };
-
-          const rest = () => {
-            const energyRestore = 50 + apartment.bonuses.energy;
-            setPlayer(p => ({
-              ...p,
-              energy: Math.min(p.maxEnergy, p.energy + energyRestore),
-              health: Math.min(p.maxHealth, p.health + 20)
-            }));
-            showMessage(`Rested. Restored ${energyRestore} energy and 20 health!`);
-          };
-
-          const showMessage = (text) => {
-            setMessage(text);
-            setTimeout(() => setMessage(''), 3000);
-          };
-
-          const renderMenu = () => (
-            <div className="flex flex-col items-center justify-center h-full bg-gradient-to-b from-purple-900 to-black text-white">
-              <h1 className="text-6xl font-bold mb-4 text-yellow-400" style={{ textShadow: '0 0 10px #FFD700' }}>
-                DUAL LIFE
-              </h1>
-              <p className="text-xl mb-8 text-gray-300">A Modern Retro RPG</p>
-              <div className="space-y-4">
-                <button
-                  onClick={() => setGameScreen('normal')}
-                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-xl font-bold w-64"
-                >
-                  Start Game
-                </button>
-                <div className="text-center text-sm text-gray-400 mt-4">
-                  <p>Live your normal life and become a hero!</p>
-                </div>
+  // Render Save Menu
+  const renderSaveMenu = () => (
+    <div className="flex flex-col items-center justify-center h-full bg-gradient-to-b from-purple-900 to-black text-white p-6">
+      <h1 className="text-6xl font-bold mb-2 text-yellow-400" style={{ textShadow: '0 0 10px #FFD700' }}>
+        NOVA SENTINEL
+      </h1>
+      <p className="text-xl mb-8 text-gray-300">Select or Create Save File</p>
+      
+      <div className="w-full max-w-4xl space-y-4 mb-6">
+        {saveSlots.map(slot => (
+          <div key={slot.id} className="bg-gray-800 p-4 rounded-lg flex items-center justify-between hover:bg-gray-700 transition-colors">
+            <div className="flex-1">
+              <h3 className="text-2xl font-bold text-yellow-400">{slot.name}</h3>
+              <div className="text-sm text-gray-400 mt-1">
+                <div>Level {slot.gameState.player.level} • ${slot.gameState.player.money}</div>
+                <div>Play Time: {formatPlayTime(slot.gameState.playTime)}</div>
+                <div>Last Played: {formatDate(slot.lastPlayed)}</div>
               </div>
             </div>
-          );
-
-          const renderNormalLife = () => (
-            <div className="h-full bg-gradient-to-b from-sky-400 to-blue-200 p-6 overflow-y-auto">
-              <h2 className="text-3xl font-bold mb-4 text-center text-white" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>
-                Normal Life - {player.name}
-              </h2>
-              
-              {dailyEvent && (
-                <div className="bg-yellow-100 border-2 border-yellow-500 p-4 rounded mb-4 text-center">
-                  <p className="font-bold">{dailyEvent.text}</p>
-                  <button onClick={() => setDailyEvent(null)} className="mt-2 px-4 py-1 bg-yellow-500 rounded">
-                    OK
-                  </button>
-                </div>
-              )}
-              
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <button
-                  onClick={() => setGameScreen('job')}
-                  className="bg-green-600 hover:bg-green-700 text-white p-6 rounded-lg flex flex-col items-center"
-                >
-                  <Briefcase size={48} />
-                  <span className="mt-2 text-xl font-bold">Work</span>
-                </button>
-                
-                <button
-                  onClick={() => setGameScreen('shop')}
-                  className="bg-purple-600 hover:bg-purple-700 text-white p-6 rounded-lg flex flex-col items-center"
-                >
-                  <ShoppingCart size={48} />
-                  <span className="mt-2 text-xl font-bold">Shop</span>
-                </button>
-                
-                <button
-                  onClick={() => setGameScreen('apartment')}
-                  className="bg-orange-600 hover:bg-orange-700 text-white p-6 rounded-lg flex flex-col items-center"
-                >
-                  <Home size={48} />
-                  <span className="mt-2 text-xl font-bold">Apartment</span>
-                </button>
-                
-                <button
-                  onClick={() => {
-                    if (player.energy >= 30) {
-                      setPlayer(p => ({ ...p, energy: p.energy - 30 }));
-                      setGameScreen('hero');
-                    } else {
-                      showMessage("Not enough energy to transform!");
-                    }
-                  }}
-                  className="bg-red-600 hover:bg-red-700 text-white p-6 rounded-lg flex flex-col items-center"
-                >
-                  <Zap size={48} />
-                  <span className="mt-2 text-xl font-bold">Become Hero</span>
-                  <span className="text-sm">(30 Energy)</span>
-                </button>
-              </div>
-              
-              <div className="bg-white rounded-lg p-4">
-                <h3 className="font-bold text-lg mb-2">Inventory</h3>
-                <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto">
-                  {inventory.map(item => (
-                    <div
-                      key={item.id}
-                      className={`p-2 border rounded text-sm ${item.equipped ? 'bg-green-100 border-green-500' : 'bg-gray-100'}`}
-                    >
-                      <div className="font-bold">{item.name}</div>
-                      {item.quantity > 1 && <div className="text-xs">x{item.quantity}</div>}
-                      <button
-                        onClick={() => equipItem(item)}
-                        className="text-xs bg-blue-500 text-white px-2 py-1 rounded mt-1"
-                      >
-                        {item.type === 'consumable' ? 'Use' : item.equipped ? 'Unequip' : 'Equip'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          );
-
-          const renderHeroLife = () => (
-            <div className="h-full bg-gradient-to-b from-gray-800 to-black p-4 relative overflow-y-auto">
-              <h2 className="text-3xl font-bold mb-2 text-center text-red-500" style={{ textShadow: '0 0 10px #ff0000' }}>
-                {player.heroName}
-              </h2>
-              
-              <div className="bg-gray-900 p-4 rounded mb-4 text-white">
-                <p className="text-center">Patrol the city and fight crime!</p>
-                <p className="text-center text-sm text-gray-400">Click on enemies to engage in combat</p>
-              </div>
-              
-              <div className="bg-gray-700 rounded p-4 mb-4 h-96 relative border-4 border-red-900">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  {enemies.length === 0 ? (
-                    <div className="text-center text-white">
-                      <p className="text-xl mb-4">Area Clear!</p>
-                      <button
-                        onClick={spawnEnemies}
-                        className="px-4 py-2 bg-green-600 rounded"
-                      >
-                        Patrol New Area
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="w-full h-full relative">
-                      <div
-                        className="absolute w-8 h-8 bg-blue-500 rounded-full border-2 border-white"
-                        style={{
-                          left: '50%',
-                          top: '50%',
-                          transform: 'translate(-50%, -50%)',
-                          boxShadow: '0 0 10px #00f'
-                        }}
-                      />
-                      
-                      {enemies.map(enemy => (
-                        <div
-                          key={enemy.id}
-                          onClick={() => startCombat(enemy)}
-                          className="absolute w-8 h-8 rounded cursor-pointer hover:scale-110 transition-transform"
-                          style={{
-                            left: `${(enemy.x / 800) * 100}%`,
-                            top: `${(enemy.y / 600) * 100}%`,
-                            backgroundColor: enemy.color,
-                            border: '2px solid white',
-                            boxShadow: `0 0 5px ${enemy.color}`
-                          }}
-                          title={`${enemy.name} - HP: ${enemy.health}/${enemy.maxHealth}`}
-                        >
-                          <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap bg-black bg-opacity-75 px-1 rounded text-white">
-                            {enemy.name}
-                          </div>
-                          <div className="absolute -bottom-2 left-0 w-full h-1 bg-gray-800 rounded">
-                            <div
-                              className="h-full bg-red-500 rounded"
-                              style={{ width: `${(enemy.health / enemy.maxHealth) * 100}%` }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              
+            <div className="flex gap-2">
               <button
-                onClick={() => setGameScreen('normal')}
-                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+                onClick={() => loadSave(slot.id)}
+                className="px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold"
               >
-                Return to Normal Life
+                Load
+              </button>
+              <button
+                onClick={() => deleteSave(slot.id)}
+                className="px-4 py-3 bg-red-600 hover:bg-red-700 rounded-lg"
+              >
+                <Trash2 size={20} />
               </button>
             </div>
-          );
+          </div>
+        ))}
+        
+        {saveSlots.length === 0 && (
+          <div className="text-center text-gray-400 py-8">
+            No save files yet. Create one to start playing!
+          </div>
+        )}
+      </div>
+      
+      {saveSlots.length < 4 && (
+        <button
+          onClick={() => setShowNewSaveDialog(true)}
+          className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-xl font-bold flex items-center gap-2"
+        >
+          <Plus size={24} />
+          Create New Save
+        </button>
+      )}
+      
+      {saveSlots.length >= 4 && (
+        <p className="text-gray-400">Maximum save slots reached (4/4)</p>
+      )}
+    </div>
+  );
 
-          const renderCombat = () => (
-            <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4">
-              <div className="bg-gray-800 p-6 rounded-lg max-w-2xl w-full text-white max-h-screen overflow-y-auto">
-                <h2 className="text-2xl font-bold mb-4 text-center text-red-500">
-                  COMBAT: {combat.enemy.name}
-                </h2>
-                
-                <div className="mb-4 p-4 bg-gray-700 rounded">
-                  <div className="flex justify-between mb-2">
-                    <span className="font-bold">{combat.enemy.name}</span>
-                    <span>HP: {combat.enemy.health}/{combat.enemy.maxHealth}</span>
+  // New Save Dialog
+  const renderNewSaveDialog = () => (
+    <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+      <div className="bg-gray-800 p-8 rounded-lg max-w-md w-full text-white">
+        <h2 className="text-3xl font-bold mb-4 text-yellow-400">Create New Save</h2>
+        <input
+          type="text"
+          value={newSaveName}
+          onChange={(e) => setNewSaveName(e.target.value)}
+          placeholder="Enter save name..."
+          maxLength={20}
+          className="w-full px-4 py-3 bg-gray-700 rounded mb-4 text-white text-lg"
+          autoFocus
+        />
+        <div className="flex gap-3">
+          <button
+            onClick={createNewSave}
+            className="flex-1 py-3 bg-green-600 hover:bg-green-700 rounded font-bold"
+          >
+            Create
+          </button>
+          <button
+            onClick={() => {
+              setShowNewSaveDialog(false);
+              setNewSaveName('');
+            }}
+            className="flex-1 py-3 bg-gray-600 hover:bg-gray-700 rounded font-bold"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderMenu = () => (
+    <div className="flex flex-col items-center justify-center h-full bg-gradient-to-b from-purple-900 to-black text-white">
+      <h1 className="text-6xl font-bold mb-4 text-yellow-400" style={{ textShadow: '0 0 10px #FFD700' }}>
+        NOVA SENTINEL
+      </h1>
+      <p className="text-xl mb-8 text-gray-300">A Modern Retro RPG</p>
+      <div className="space-y-4">
+        <button
+          onClick={() => setGameScreen('normal')}
+          className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-xl font-bold w-64"
+        >
+          Continue
+        </button>
+        <button
+          onClick={saveGame}
+          className="px-8 py-3 bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold w-64 flex items-center justify-center gap-2"
+        >
+          <Save size={24} />
+          Save Game
+        </button>
+        <button
+          onClick={returnToSaveMenu}
+          className="px-8 py-3 bg-gray-600 hover:bg-gray-700 rounded-lg text-xl font-bold w-64"
+        >
+          Save Menu
+        </button>
+        <div className="text-center text-sm text-gray-400 mt-4">
+          <p>Live your normal life and become a hero!</p>
+          <p className="mt-2">Play Time: {formatPlayTime(playTime)}</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderNormalLife = () => (
+    <div className="h-full bg-gradient-to-b from-sky-400 to-blue-200 p-6 overflow-y-auto">
+      <h2 className="text-3xl font-bold mb-4 text-center text-white" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>
+        Normal Life - {player.name}
+      </h2>
+      
+      {dailyEvent && (
+        <div className="bg-yellow-100 border-2 border-yellow-500 p-4 rounded mb-4 text-center">
+          <p className="font-bold">{dailyEvent.text}</p>
+          <button onClick={() => setDailyEvent(null)} className="mt-2 px-4 py-1 bg-yellow-500 rounded">
+            OK
+          </button>
+        </div>
+      )}
+      
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <button
+          onClick={() => setGameScreen('job')}
+          className="bg-green-600 hover:bg-green-700 text-white p-6 rounded-lg flex flex-col items-center"
+        >
+          <Briefcase size={48} />
+          <span className="mt-2 text-xl font-bold">Work</span>
+        </button>
+        
+        <button
+          onClick={() => setGameScreen('shop')}
+          className="bg-purple-600 hover:bg-purple-700 text-white p-6 rounded-lg flex flex-col items-center"
+        >
+          <ShoppingCart size={48} />
+          <span className="mt-2 text-xl font-bold">Shop</span>
+        </button>
+        
+        <button
+          onClick={() => setGameScreen('apartment')}
+          className="bg-orange-600 hover:bg-orange-700 text-white p-6 rounded-lg flex flex-col items-center"
+        >
+          <Home size={48} />
+          <span className="mt-2 text-xl font-bold">Apartment</span>
+        </button>
+        
+        <button
+          onClick={() => {
+            if (player.energy >= 30) {
+              setPlayer(p => ({ ...p, energy: p.energy - 30 }));
+              setGameScreen('hero');
+            } else {
+              showMessage("Not enough energy to transform!");
+            }
+          }}
+          className="bg-red-600 hover:bg-red-700 text-white p-6 rounded-lg flex flex-col items-center"
+        >
+          <Zap size={48} />
+          <span className="mt-2 text-xl font-bold">Become Hero</span>
+          <span className="text-sm">(30 Energy)</span>
+        </button>
+      </div>
+      
+      <div className="bg-white rounded-lg p-4">
+        <h3 className="font-bold text-lg mb-2">Inventory</h3>
+        <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto">
+          {inventory.map(item => (
+            <div
+              key={item.id}
+              className={`p-2 border rounded text-sm ${item.equipped ? 'bg-green-100 border-green-500' : 'bg-gray-100'}`}
+            >
+              <div className="font-bold">{item.name}</div>
+              {item.quantity > 1 && <div className="text-xs">x{item.quantity}</div>}
+              <button
+                onClick={() => equipItem(item)}
+                className="text-xs bg-blue-500 text-white px-2 py-1 rounded mt-1"
+              >
+                {item.type === 'consumable' ? 'Use' : item.equipped ? 'Unequip' : 'Equip'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderHeroLife = () => (
+    <div className="h-full bg-gradient-to-b from-gray-800 to-black p-4 relative overflow-y-auto">
+      <h2 className="text-3xl font-bold mb-2 text-center text-red-500" style={{ textShadow: '0 0 10px #ff0000' }}>
+        {player.heroName}
+      </h2>
+      
+      <div className="bg-gray-900 p-4 rounded mb-4 text-white">
+        <p className="text-center">Patrol the city and fight crime!</p>
+        <p className="text-center text-sm text-gray-400">Click on enemies to engage in combat</p>
+      </div>
+      
+      <div className="bg-gray-700 rounded p-4 mb-4 h-96 relative border-4 border-red-900">
+        <div className="absolute inset-0 flex items-center justify-center">
+          {enemies.length === 0 ? (
+            <div className="text-center text-white">
+              <p className="text-xl mb-4">Area Clear!</p>
+              <button
+                onClick={spawnEnemies}
+                className="px-4 py-2 bg-green-600 rounded"
+              >
+                Patrol New Area
+              </button>
+            </div>
+          ) : (
+            <div className="w-full h-full relative">
+              <div
+                className="absolute w-8 h-8 bg-blue-500 rounded-full border-2 border-white"
+                style={{
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  boxShadow: '0 0 10px #00f'
+                }}
+              />
+              
+              {enemies.map(enemy => (
+                <div
+                  key={enemy.id}
+                  onClick={() => startCombat(enemy)}
+                  className="absolute w-8 h-8 rounded cursor-pointer hover:scale-110 transition-transform"
+                  style={{
+                    left: `${(enemy.x / 800) * 100}%`,
+                    top: `${(enemy.y / 600) * 100}%`,
+                    backgroundColor: enemy.color,
+                    border: '2px solid white',
+                    boxShadow: `0 0 5px ${enemy.color}`
+                  }}
+                  title={`${enemy.name} - HP: ${enemy.health}/${enemy.maxHealth}`}
+                >
+                  <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap bg-black bg-opacity-75 px-1 rounded text-white">
+                    {enemy.name}
                   </div>
-                  <div className="w-full h-4 bg-gray-900 rounded overflow-hidden">
+                  <div className="absolute -bottom-2 left-0 w-full h-1 bg-gray-800 rounded">
                     <div
-                      className="h-full bg-red-500 transition-all"
-                      style={{ width: `${(combat.enemy.health / combat.enemy.maxHealth) * 100}%` }}
+                      className="h-full bg-red-500 rounded"
+                      style={{ width: `${(enemy.health / enemy.maxHealth) * 100}%` }}
                     />
                   </div>
                 </div>
-                
-                <div className="mb-4 p-3 bg-gray-900 rounded h-32 overflow-y-auto text-sm">
-                  {combat.log.map((log, i) => (
-                    <div key={i} className="mb-1">{log}</div>
-                  ))}
-                </div>
-                
-                {qteActive && (
-                  <div className="mb-4 p-4 bg-yellow-600 rounded text-center animate-pulse">
-                    <div className="text-2xl font-bold mb-2">
-                      {qteActive.type === 'dodge' ? 'DODGE!' : 'BLOCK!'}
-                    </div>
-                    <div className="text-4xl font-bold">
-                      Press {qteActive.key}!
-                    </div>
-                  </div>
-                )}
-                
-                {combat.turn === 'player' && !qteActive && (
-                  <div className="space-y-2">
-                    <button
-                      onClick={() => performPlayerAttack('basic')}
-                      className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold"
-                    >
-                      Basic Attack (Damage: {player.strength})
-                    </button>
-                    
-                    <div className="grid grid-cols-2 gap-2">
-                      {powers.filter(p => p.unlocked).map(power => (
-                        <button
-                          key={power.id}
-                          onClick={() => performPlayerAttack('power', power)}
-                          disabled={player.energy < power.energyCost}
-                          className={`py-2 rounded font-bold ${
-                            player.energy >= power.energyCost
-                              ? 'bg-purple-600 hover:bg-purple-700'
-                              : 'bg-gray-600 cursor-not-allowed'
-                          }`}
-                        >
-                          {power.name}
-                          <div className="text-xs">DMG: {power.damage} | Cost: {power.energyCost}</div>
-                        </button>
-                      ))}
-                    </div>
-                    
-                    <button
-                      onClick={() => endCombat(false)}
-                      className="w-full py-2 bg-red-600 hover:bg-red-700 rounded"
-                    >
-                      Retreat
-                    </button>
-                  </div>
-                )}
-                
-                {combat.turn === 'enemy' && !qteActive && (
-                  <div className="text-center py-4 text-yellow-400">
-                    Enemy's Turn...
-                  </div>
-                )}
-              </div>
+              ))}
             </div>
-          );
+          )}
+        </div>
+      </div>
+      
+      <button
+        onClick={() => setGameScreen('normal')}
+        className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+      >
+        Return to Normal Life
+      </button>
+    </div>
+  );
 
-          const renderJob = () => (
-            <div className="h-full bg-gradient-to-b from-green-700 to-green-900 p-6 text-white overflow-y-auto">
-              <h2 className="text-3xl font-bold mb-6 text-center">Available Jobs</h2>
-              
-              <div className="space-y-4 mb-6">
-                {jobs.map((job, i) => (
-                  <div key={i} className="bg-green-800 p-4 rounded-lg">
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className="text-xl font-bold">{job.name}</h3>
-                      <span className="text-yellow-400 font-bold">${job.pay}</span>
-                    </div>
-                    <div className="text-sm mb-2">
-                      <span>Duration: {job.duration}</span>
-                      <span className="ml-4">Energy Cost: {job.energyCost}</span>
-                    </div>
-                    <button
-                      onClick={() => doJob(job)}
-                      disabled={player.energy < job.energyCost}
-                      className={`w-full py-2 rounded font-bold ${
-                        player.energy >= job.energyCost
-                          ? 'bg-yellow-500 hover:bg-yellow-600'
-                          : 'bg-gray-600 cursor-not-allowed'
-                      }`}
-                    >
-                      {player.energy >= job.energyCost ? 'Work' : 'Not Enough Energy'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-              
-              <button
-                onClick={() => setGameScreen('normal')}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold"
-              >
-                Back
-              </button>
+  const renderCombat = () => (
+    <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-800 p-6 rounded-lg max-w-2xl w-full text-white max-h-screen overflow-y-auto">
+        <h2 className="text-2xl font-bold mb-4 text-center text-red-500">
+          COMBAT: {combat.enemy.name}
+        </h2>
+        
+        <div className="mb-4 p-4 bg-gray-700 rounded">
+          <div className="flex justify-between mb-2">
+            <span className="font-bold">{combat.enemy.name}</span>
+            <span>HP: {combat.enemy.health}/{combat.enemy.maxHealth}</span>
+          </div>
+          <div className="w-full h-4 bg-gray-900 rounded overflow-hidden">
+            <div
+              className="h-full bg-red-500 transition-all"
+              style={{ width: `${(combat.enemy.health / combat.enemy.maxHealth) * 100}%` }}
+            />
+          </div>
+        </div>
+        
+        <div className="mb-4 p-3 bg-gray-900 rounded h-32 overflow-y-auto text-sm">
+          {combat.log.map((log, i) => (
+            <div key={i} className="mb-1">{log}</div>
+          ))}
+        </div>
+        
+        {qteActive && (
+          <div className="mb-4 p-4 bg-yellow-600 rounded text-center animate-pulse">
+            <div className="text-2xl font-bold mb-2">
+              {qteActive.type === 'dodge' ? 'DODGE!' : 'BLOCK!'}
             </div>
-          );
-
-          const renderShop = () => (
-            <div className="h-full bg-gradient-to-b from-purple-700 to-purple-900 p-6 text-white overflow-y-auto">
-              <h2 className="text-3xl font-bold mb-6 text-center">Hero Shop</h2>
-              
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                {shopItems.map(item => (
-                  <div key={item.id} className="bg-purple-800 p-3 rounded-lg">
-                    <h3 className="font-bold text-lg mb-1">{item.name}</h3>
-                    <div className="text-sm mb-2">
-                      {item.strength && <div>+{item.strength} Strength</div>}
-                      {item.defense && <div>+{item.defense} Defense</div>}
-                      {item.maxEnergy && <div>+{item.maxEnergy} Max Energy</div>}
-                      {item.healthRestore && <div>Restores {item.healthRestore} HP</div>}
-                      {item.energyRestore && <div>Restores {item.energyRestore} Energy</div>}
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-yellow-400 font-bold">${item.price}</span>
-                      <button
-                        onClick={() => buyItem(item)}
-                        disabled={player.money < item.price}
-                        className={`px-4 py-1 rounded ${
-                          player.money >= item.price
-                            ? 'bg-green-600 hover:bg-green-700'
-                            : 'bg-gray-600 cursor-not-allowed'
-                        }`}
-                      >
-                        Buy
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              <button
-                onClick={() => setGameScreen('normal')}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold"
-              >
-                Back
-              </button>
+            <div className="text-4xl font-bold">
+              Press {qteActive.key}!
             </div>
-          );
-
-          const renderApartment = () => (
-            <div className="h-full bg-gradient-to-b from-orange-700 to-orange-900 p-6 text-white overflow-y-auto">
-              <h2 className="text-3xl font-bold mb-4 text-center">Your Apartment</h2>
-              
-              <div className="bg-orange-800 p-4 rounded mb-4">
-                <h3 className="font-bold mb-2">Current Bonuses:</h3>
-                <div>Energy Bonus: +{apartment.bonuses.energy}</div>
-                <div>Money Bonus: +{apartment.bonuses.money}</div>
-              </div>
-              
-              <button
-                onClick={rest}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold mb-4"
-              >
-                Rest & Recover
-              </button>
-              
-              <h3 className="text-xl font-bold mb-3">Furniture Shop</h3>
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                {furnitureItems.map(item => (
-                  <div key={item.id} className="bg-orange-800 p-3 rounded-lg">
-                    <h4 className="font-bold mb-1">{item.name}</h4>
-                    <div className="text-sm mb-2">
-                      {item.bonus.energy && <div>+{item.bonus.energy} Energy</div>}
-                      {item.bonus.money && <div>+{item.bonus.money} Money</div>}
-                      {item.bonus.strength && <div>+{item.bonus.strength} Strength</div>}
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-yellow-400 font-bold">${item.price}</span>
-                      <button
-                        onClick={() => buyFurniture(item)}
-                        disabled={player.money < item.price}
-                        className={`px-3 py-1 rounded text-sm ${
-                          player.money >= item.price
-                            ? 'bg-green-600 hover:bg-green-700'
-                            : 'bg-gray-600 cursor-not-allowed'
-                        }`}
-                      >
-                        Buy
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              {apartment.furniture.length > 0 && (
-                <div className="bg-orange-800 p-4 rounded mb-4">
-                  <h3 className="font-bold mb-2">Your Furniture:</h3>
-                  {apartment.furniture.map(item => (
-                    <div key={item.id} className="text-sm">• {item.name}</div>
-                  ))}
-                </div>
-              )}
-              
-              <button
-                onClick={() => setGameScreen('normal')}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold"
-              >
-                Back
-              </button>
-            </div>
-          );
-
-          const renderHUD = () => {
-            if (gameScreen === 'menu') return null;
+          </div>
+        )}
+        
+        {combat.turn === 'player' && !qteActive && (
+          <div className="space-y-2">
+            <button
+              onClick={() => performPlayerAttack('basic')}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold"
+            >
+              Basic Attack (Damage: {player.strength})
+            </button>
             
-            return (
-              <div className="absolute top-0 left-0 right-0 bg-black bg-opacity-75 text-white p-3 z-10">
-                <div className="grid grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <div className="font-bold">Level {player.level}</div>
-                    <div className="text-xs">XP: {player.xp}/{player.xpToNext}</div>
-                  </div>
-                  
-                  <div>
-                    <div className="font-bold text-red-500">HP: {player.health}/{player.maxHealth}</div>
-                    <div className="w-full h-2 bg-gray-700 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-red-500"
-                        style={{ width: `${(player.health / player.maxHealth) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <div className="font-bold text-blue-500">Energy: {player.energy}/{player.maxEnergy}</div>
-                    <div className="w-full h-2 bg-gray-700 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500"
-                        style={{ width: `${(player.energy / player.maxEnergy) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <div className="font-bold text-yellow-400">Money: ${player.money}</div>
-                    <div className="text-xs">STR:{player.strength} DEF:{player.defense} AGI:{player.agility}</div>
-                  </div>
-                </div>
-              </div>
-            );
-          };
-
-          return (
-            <div className="w-full h-screen bg-black relative overflow-hidden">
-              {renderHUD()}
-              
-              <div className="w-full h-full pt-16">
-                {gameScreen === 'menu' && renderMenu()}
-                {gameScreen === 'normal' && renderNormalLife()}
-                {gameScreen === 'hero' && renderHeroLife()}
-                {gameScreen === 'job' && renderJob()}
-                {gameScreen === 'shop' && renderShop()}
-                {gameScreen === 'apartment' && renderApartment()}
-              </div>
-              
-              {combat && renderCombat()}
-              
-              {message && (
-                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-90 text-white px-6 py-3 rounded-lg font-bold text-center animate-pulse z-50">
-                  {message}
-                </div>
-              )}
+            <div className="grid grid-cols-2 gap-2">
+              {powers.filter(p => p.unlocked).map(power => (
+                <button
+                  key={power.id}
+                  onClick={() => performPlayerAttack('power', power)}
+                  disabled={player.energy < power.energyCost}
+                  className={`py-2 rounded font-bold ${
+                    player.energy >= power.energyCost
+                      ? 'bg-purple-600 hover:bg-purple-700'
+                      : 'bg-gray-600 cursor-not-allowed'
+                  }`}
+                >
+                  {power.name}
+                  <div className="text-xs">DMG: {power.damage} | Cost: {power.energyCost}</div>
+                </button>
+              ))}
             </div>
-          );
-        };
+            
+            <button
+              onClick={() => endCombat(false)}
+              className="w-full py-2 bg-red-600 hover:bg-red-700 rounded"
+            >
+              Retreat
+            </button>
+          </div>
+        )}
+        
+        {combat.turn === 'enemy' && !qteActive && (
+          <div className="text-center py-4 text-yellow-400">
+            Enemy's Turn...
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
-        ReactDOM.render(<DualLifeRPG />, document.getElementById('root'));
-    </script>
-</body>
-</html>
+  const renderJob = () => (
+    <div className="h-full bg-gradient-to-b from-green-700 to-green-900 p-6 text-white overflow-y-auto">
+      <h2 className="text-3xl font-bold mb-6 text-center">Available Jobs</h2>
+      
+      <div className="space-y-4 mb-6">
+        {jobs.map((job, i) => (
+          <div key={i} className="bg-green-800 p-4 rounded-lg">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-xl font-bold">{job.name}</h3>
+              <span className="text-yellow-400 font-bold">${job.pay}</span>
+            </div>
+            <div className="text-sm mb-2">
+              <span>Duration: {job.duration}</span>
+              <span className="ml-4">Energy Cost: {job.energyCost}</span>
+            </div>
+            <button
+              onClick={() => doJob(job)}
+              disabled={player.energy < job.energyCost}
+              className={`w-full py-2 rounded font-bold ${
+                player.energy >= job.energyCost
+                  ? 'bg-yellow-500 hover:bg-yellow-600'
+                  : 'bg-gray-600 cursor-not-allowed'
+              }`}
+            >
+              {player.energy >= job.energyCost ? 'Work' : 'Not Enough Energy'}
+            </button>
+          </div>
+        ))}
+      </div>
+      
+      <button
+        onClick={() => setGameScreen('normal')}
+        className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold"
+      >
+        Back
+      </button>
+    </div>
+  );
+
+  const renderShop = () => (
+    <div className="h-full bg-gradient-to-b from-purple-700 to-purple-900 p-6 text-white overflow-y-auto">
+      <h2 className="text-3xl font-bold mb-6 text-center">Hero Shop</h2>
+      
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        {shopItems.map(item => (
+          <div key={item.id} className="bg-purple-800 p-3 rounded-lg">
+            <h3 className="font-bold text-lg mb-1">{item.name}</h3>
+            <div className="text-sm mb-2">
+              {item.strength && <div>+{item.strength} Strength</div>}
+              {item.defense && <div>+{item.defense} Defense</div>}
+              {item.maxEnergy && <div>+{item.maxEnergy} Max Energy</div>}
+              {item.healthRestore && <div>Restores {item.healthRestore} HP</div>}
+              {item.energyRestore && <div>Restores {item.energyRestore} Energy</div>}
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-yellow-400 font-bold">${item.price}</span>
+              <button
+                onClick={() => buyItem(item)}
+                disabled={player.money < item.price}
+                className={`px-4 py-1 rounded ${
+                  player.money >= item.price
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : 'bg-gray-600 cursor-not-allowed'
+                }`}
+              >
+                Buy
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      <button
+        onClick={() => setGameScreen('normal')}
+        className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold"
+      >
+        Back
+      </button>
+    </div>
+  );
+
+  const renderApartment = () => (
+    <div className="h-full bg-gradient-to-b from-orange-700 to-orange-900 p-6 text-white overflow-y-auto">
+      <h2 className="text-3xl font-bold mb-4 text-center">Your Apartment</h2>
+      
+      <div className="bg-orange-800 p-4 rounded mb-4">
+        <h3 className="font-bold mb-2">Current Bonuses:</h3>
+        <div>Energy Bonus: +{apartment.bonuses.energy}</div>
+        <div>Money Bonus: +{apartment.bonuses.money}</div>
+      </div>
+      
+      <button
+        onClick={rest}
+        className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold mb-4"
+      >
+        Rest & Recover
+      </button>
+      
+      <h3 className="text-xl font-bold mb-3">Furniture Shop</h3>
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        {furnitureItems.map(item => (
+          <div key={item.id} className="bg-orange-800 p-3 rounded-lg">
+            <h4 className="font-bold mb-1">{item.name}</h4>
+            <div className="text-sm mb-2">
+              {item.bonus.energy && <div>+{item.bonus.energy} Energy</div>}
+              {item.bonus.money && <div>+{item.bonus.money} Money</div>}
+              {item.bonus.strength && <div>+{item.bonus.strength} Strength</div>}
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-yellow-400 font-bold">${item.price}</span>
+              <button
+                onClick={() => buyFurniture(item)}
+                disabled={player.money < item.price}
+                className={`px-3 py-1 rounded text-sm ${
+                  player.money >= item.price
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : 'bg-gray-600 cursor-not-allowed'
+                }`}
+              >
+                Buy
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {apartment.furniture.length > 0 && (
+        <div className="bg-orange-800 p-4 rounded mb-4">
+          <h3 className="font-bold mb-2">Your Furniture:</h3>
+          {apartment.furniture.map(item => (
+            <div key={item.id} className="text-sm">• {item.name}</div>
+          ))}
+        </div>
+      )}
+      
+      <button
+        onClick={() => setGameScreen('normal')}
+        className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded font-bold"
+      >
+        Back
+      </button>
+    </div>
+  );
+
+  const renderHUD = () => {
+    if (gameScreen === 'menu' || showSaveMenu) return null;
+    
+    return (
+      <div className="absolute top-0 left-0 right-0 bg-black bg-opacity-75 text-white p-3 z-10">
+        <div className="grid grid-cols-4 gap-4 text-sm">
+          <div>
+            <div className="font-bold">Level {player.level}</div>
+            <div className="text-xs">XP: {player.xp}/{player.xpToNext}</div>
+          </div>
+          
+          <div>
+            <div className="font-bold text-red-500">HP: {player.health}/{player.maxHealth}</div>
+            <div className="w-full h-2 bg-gray-700 rounded overflow-hidden">
+              <div
+                className="h-full bg-red-500"
+                style={{ width: `${(player.health / player.maxHealth) * 100}%` }}
+              />
+            </div>
+          </div>
+          
+          <div>
+            <div className="font-bold text-blue-500">Energy: {player.energy}/{player.maxEnergy}</div>
+            <div className="w-full h-2 bg-gray-700 rounded overflow-hidden">
+              <div
+                className="h-full bg-blue-500"
+                style={{ width: `${(player.energy / player.maxEnergy) * 100}%` }}
+              />
+            </div>
+          </div>
+          
+          <div>
+            <div className="font-bold text-yellow-400">Money: ${player.money}</div>
+            <div className="text-xs">STR:{player.strength} DEF:{player.defense} AGI:{player.agility}</div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  if (showSaveMenu) {
+    return (
+      <div className="w-full h-screen bg-black relative overflow-hidden">
+        {renderSaveMenu()}
+        {showNewSaveDialog && renderNewSaveDialog()}
+        {message && (
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-90 text-white px-6 py-3 rounded-lg font-bold text-center animate-pulse z-50">
+            {message}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-screen bg-black relative overflow-hidden">
+      {renderHUD()}
+      
+      <div className="w-full h-full pt-16">
+        {gameScreen === 'menu' && renderMenu()}
+        {gameScreen === 'normal' && renderNormalLife()}
+        {gameScreen === 'hero' && renderHeroLife()}
+        {gameScreen === 'job' && renderJob()}
+        {gameScreen === 'shop' && renderShop()}
+        {gameScreen === 'apartment' && renderApartment()}
+      </div>
+      
+      {combat && renderCombat()}
+      
+      {message && (
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-90 text-white px-6 py-3 rounded-lg font-bold text-center animate-pulse z-50">
+          {message}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default DualLifeRPG;
