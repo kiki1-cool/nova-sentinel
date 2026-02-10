@@ -1,863 +1,382 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nova Sentinel - Open World RPG</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Nova Sentinel - Open World</title>
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            image-rendering: pixelated;
-            image-rendering: -moz-crisp-edges;
-            image-rendering: crisp-edges;
-        }
-        #root {
-            width: 100%;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: #000; 
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
             height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
         }
-        canvas {
+        #game { 
+            border: 4px solid #444;
+            box-shadow: 0 0 40px rgba(255,215,0,0.3);
             image-rendering: pixelated;
+        }
+        #hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #title {
+            font-size: 32px;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 0 0 10px #FFD700;
+        }
+        #stats {
+            display: flex;
+            gap: 20px;
+            font-size: 18px;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
         }
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="hud">
+        <div id="title">NOVA SENTINEL</div>
+        <div id="stats">
+            <span id="time">⏰ 2:00 PM</span>
+            <span>💰 $500</span>
+            <span>⚡ 100</span>
+            <span>😊 100</span>
+        </div>
+    </div>
+    
+    <canvas id="game" width="1000" height="700"></canvas>
+    
+    <div id="controls">
+        WASD or Arrow Keys to Move • E to Enter Buildings
+    </div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-
-        // Icons
-        const Save = ({ size = 24 }) => (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-            </svg>
-        );
-
-        const Trash2 = ({ size = 24 }) => (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-        );
-
-        const Plus = ({ size = 24 }) => (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-        );
-
-        const NovaGameRPG = () => {
-          // Save system
-          const [saveSlots, setSaveSlots] = useState([]);
-          const [currentSaveSlot, setCurrentSaveSlot] = useState(null);
-          const [showSaveMenu, setShowSaveMenu] = useState(true);
-          const [showNewSaveDialog, setShowNewSaveDialog] = useState(false);
-          const [newSaveName, setNewSaveName] = useState('');
-
-          // Game state
-          const [gameScreen, setGameScreen] = useState('menu');
-          const [message, setMessage] = useState('');
-          
-          // Time system (real-time)
-          const [gameTime, setGameTime] = useState({
-            hours: 8,
-            minutes: 0,
-            day: 1
-          });
-          
-          // Player state
-          const [player, setPlayer] = useState({
-            name: "Alex",
-            level: 1,
-            xp: 0,
-            xpToNext: 100,
-            health: 100,
-            maxHealth: 100,
-            energy: 100,
-            maxEnergy: 100,
-            happiness: 100,
-            maxHappiness: 100,
-            money: 500,
-            strength: 10,
-            defense: 5,
-            agility: 8,
-            x: 400,
-            y: 300,
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        
+        // Game state
+        let gameTime = { hours: 14, minutes: 0, day: 1 };
+        let player = { 
+            x: 500, 
+            y: 350,
+            speed: 4,
+            walking: false,
             direction: 'down',
-            isMoving: false,
-            heroName: "Nova Sentinel"
-          });
-
-          const [inventory, setInventory] = useState([
-            { id: 1, name: "Basic Suit", type: "armor", defense: 3, equipped: false },
-            { id: 2, name: "Energy Bar", type: "consumable", energyRestore: 30, quantity: 3 }
-          ]);
-
-          const [powers, setPowers] = useState([
-            { id: 1, name: "Energy Blast", damage: 25, energyCost: 20, unlocked: true },
-            { id: 2, name: "Shield Barrier", defense: 15, energyCost: 25, unlocked: false },
-            { id: 3, name: "Lightning Strike", damage: 40, energyCost: 35, unlocked: false }
-          ]);
-
-          const [apartment, setApartment] = useState({
-            furniture: [],
-            bonuses: { energy: 0, money: 0, happiness: 0 }
-          });
-
-          const [enemies, setEnemies] = useState([]);
-          const [combat, setCombat] = useState(null);
-          const [inBuilding, setInBuilding] = useState(null);
-          const [playTime, setPlayTime] = useState(0);
-
-          // Canvas and rendering
-          const canvasRef = useRef(null);
-          const keysPressed = useRef({});
-          const animationFrame = useRef(null);
-
-          // Buildings in the world
-          const buildings = [
-            { id: 'home', x: 100, y: 100, width: 120, height: 100, name: "Your Apartment", color: '#8B4513' },
-            { id: 'shop', x: 400, y: 150, width: 100, height: 80, name: "Hero Shop", color: '#9370DB' },
-            { id: 'mcdonalds', x: 650, y: 200, width: 110, height: 90, name: "McDonald's", color: '#FFD700' },
-            { id: 'office', x: 250, y: 400, width: 130, height: 100, name: "Office Building", color: '#4682B4' }
-          ];
-
-          // Real-time clock
-          useEffect(() => {
-            if (currentSaveSlot && gameScreen === 'world') {
-              const clockInterval = setInterval(() => {
-                setGameTime(prev => {
-                  let newMinutes = prev.minutes + 1;
-                  let newHours = prev.hours;
-                  let newDay = prev.day;
-                  
-                  if (newMinutes >= 60) {
-                    newMinutes = 0;
-                    newHours += 1;
-                  }
-                  
-                  if (newHours >= 24) {
-                    newHours = 0;
-                    newDay += 1;
-                  }
-                  
-                  return { hours: newHours, minutes: newMinutes, day: newDay };
-                });
-                
-                // Decrease energy slowly over time
-                setPlayer(p => ({
-                  ...p,
-                  energy: Math.max(0, p.energy - 0.1),
-                  happiness: Math.max(0, p.happiness - 0.05)
-                }));
-              }, 60000); // Every real minute
-              
-              return () => clearInterval(clockInterval);
+            frame: 0
+        };
+        
+        let keys = {};
+        let frameCount = 0;
+        
+        // Buildings
+        const buildings = [
+            { x: 100, y: 80, w: 160, h: 140, color: '#8B4513', name: 'Your Apartment', type: 'home' },
+            { x: 350, y: 90, w: 140, h: 120, color: '#9370DB', name: 'Hero Shop', type: 'shop' },
+            { x: 580, y: 85, w: 150, h: 130, color: '#FFD700', name: "McDonald's", type: 'mcdonalds' },
+            { x: 120, y: 450, w: 130, h: 110, color: '#4682B4', name: 'Office', type: 'office' },
+            { x: 400, y: 460, w: 120, h: 100, color: '#DC143C', name: 'Gym', type: 'gym' },
+            { x: 650, y: 470, w: 135, h: 115, color: '#32CD32', name: 'Park', type: 'park' }
+        ];
+        
+        // Trees
+        const trees = [
+            { x: 300, y: 320 }, { x: 450, y: 330 }, { x: 600, y: 315 },
+            { x: 180, y: 600 }, { x: 350, y: 620 }, { x: 550, y: 610 },
+            { x: 850, y: 150 }, { x: 880, y: 350 }, { x: 900, y: 550 }
+        ];
+        
+        // Event listeners
+        window.addEventListener('keydown', e => {
+            keys[e.key.toLowerCase()] = true;
+            if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) {
+                e.preventDefault();
             }
-          }, [currentSaveSlot, gameScreen]);
-
-          // Play time tracker
-          useEffect(() => {
-            if (currentSaveSlot && !showSaveMenu) {
-              const interval = setInterval(() => {
-                setPlayTime(prev => prev + 1);
-              }, 1000);
-              return () => clearInterval(interval);
+        });
+        window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+        
+        // Game clock (1 real second = 1 game minute)
+        setInterval(() => {
+            gameTime.minutes++;
+            if (gameTime.minutes >= 60) {
+                gameTime.minutes = 0;
+                gameTime.hours++;
             }
-          }, [currentSaveSlot, showSaveMenu]);
-
-          // Keyboard controls
-          useEffect(() => {
-            const handleKeyDown = (e) => {
-              keysPressed.current[e.key.toLowerCase()] = true;
-            };
-            
-            const handleKeyUp = (e) => {
-              keysPressed.current[e.key.toLowerCase()] = false;
-            };
-            
-            window.addEventListener('keydown', handleKeyDown);
-            window.addEventListener('keyup', handleKeyUp);
-            
-            return () => {
-              window.removeEventListener('keydown', handleKeyDown);
-              window.removeEventListener('keyup', handleKeyUp);
-            };
-          }, []);
-
-          // Game loop
-          useEffect(() => {
-            if (gameScreen === 'world' && canvasRef.current) {
-              const canvas = canvasRef.current;
-              const ctx = canvas.getContext('2d');
-              
-              const gameLoop = () => {
-                // Update player position
-                let newX = player.x;
-                let newY = player.y;
-                let moving = false;
-                let direction = player.direction;
-                
-                const speed = 3;
-                
-                if (keysPressed.current['w'] || keysPressed.current['arrowup']) {
-                  newY -= speed;
-                  direction = 'up';
-                  moving = true;
-                }
-                if (keysPressed.current['s'] || keysPressed.current['arrowdown']) {
-                  newY += speed;
-                  direction = 'down';
-                  moving = true;
-                }
-                if (keysPressed.current['a'] || keysPressed.current['arrowleft']) {
-                  newX -= speed;
-                  direction = 'left';
-                  moving = true;
-                }
-                if (keysPressed.current['d'] || keysPressed.current['arrowright']) {
-                  newX += speed;
-                  direction = 'right';
-                  moving = true;
-                }
-                
-                // Boundaries
-                newX = Math.max(20, Math.min(780, newX));
-                newY = Math.max(20, Math.min(580, newY));
-                
-                setPlayer(p => ({
-                  ...p,
-                  x: newX,
-                  y: newY,
-                  direction,
-                  isMoving: moving
-                }));
-                
-                // Check building collision
-                if (keysPressed.current['e']) {
-                  buildings.forEach(building => {
-                    const dist = Math.sqrt(
-                      Math.pow(player.x - (building.x + building.width/2), 2) +
-                      Math.pow(player.y - (building.y + building.height/2), 2)
-                    );
-                    
-                    if (dist < 60) {
-                      enterBuilding(building.id);
-                    }
-                  });
-                  keysPressed.current['e'] = false;
-                }
-                
-                // Render
-                renderWorld(ctx);
-                
-                animationFrame.current = requestAnimationFrame(gameLoop);
-              };
-              
-              gameLoop();
-              
-              return () => {
-                if (animationFrame.current) {
-                  cancelAnimationFrame(animationFrame.current);
-                }
-              };
+            if (gameTime.hours >= 24) {
+                gameTime.hours = 0;
+                gameTime.day++;
             }
-          }, [gameScreen, player.x, player.y, player.direction, gameTime]);
-
-          const renderWorld = (ctx) => {
-            const canvas = ctx.canvas;
+            updateHUD();
+        }, 1000);
+        
+        function updateHUD() {
+            const h = gameTime.hours % 12 || 12;
+            const m = gameTime.minutes.toString().padStart(2, '0');
+            const period = gameTime.hours >= 12 ? 'PM' : 'AM';
+            document.getElementById('time').textContent = `⏰ ${h}:${m} ${period} - Day ${gameTime.day}`;
+        }
+        
+        function gameLoop() {
+            frameCount++;
             
-            // Sky color based on time
+            // Player movement
+            let moving = false;
+            let newX = player.x;
+            let newY = player.y;
+            
+            if (keys['w'] || keys['arrowup']) {
+                newY -= player.speed;
+                player.direction = 'up';
+                moving = true;
+            }
+            if (keys['s'] || keys['arrowdown']) {
+                newY += player.speed;
+                player.direction = 'down';
+                moving = true;
+            }
+            if (keys['a'] || keys['arrowleft']) {
+                newX -= player.speed;
+                player.direction = 'left';
+                moving = true;
+            }
+            if (keys['d'] || keys['arrowright']) {
+                newX += player.speed;
+                player.direction = 'right';
+                moving = true;
+            }
+            
+            // Boundaries
+            newX = Math.max(30, Math.min(970, newX));
+            newY = Math.max(30, Math.min(670, newY));
+            
+            // Building collision
+            let collision = false;
+            buildings.forEach(b => {
+                if (newX > b.x - 25 && newX < b.x + b.w + 25 &&
+                    newY > b.y - 25 && newY < b.y + b.h + 25) {
+                    collision = true;
+                }
+            });
+            
+            if (!collision) {
+                player.x = newX;
+                player.y = newY;
+            }
+            
+            player.walking = moving;
+            if (moving && frameCount % 10 === 0) {
+                player.frame = (player.frame + 1) % 2;
+            }
+            
+            // Render
+            render();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        function render() {
             const isDaytime = gameTime.hours >= 6 && gameTime.hours < 20;
             const isEvening = gameTime.hours >= 18 && gameTime.hours < 20;
             const isMorning = gameTime.hours >= 6 && gameTime.hours < 8;
+            const isNight = !isDaytime;
             
-            let skyColor = '#87CEEB'; // Day
-            if (!isDaytime) skyColor = '#191970'; // Night
-            else if (isEvening) skyColor = '#FF6B35'; // Evening
-            else if (isMorning) skyColor = '#FFB347'; // Morning
+            // Sky
+            let skyColor = '#87CEEB';
+            if (isNight) skyColor = '#1a1a2e';
+            else if (isEvening) skyColor = '#FF6B35';
+            else if (isMorning) skyColor = '#FFB347';
             
             ctx.fillStyle = skyColor;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, 0, 1000, 700);
             
             // Ground
-            ctx.fillStyle = '#228B22';
-            ctx.fillRect(0, canvas.height - 100, canvas.width, 100);
+            ctx.fillStyle = '#2F4F2F';
+            ctx.fillRect(0, 0, 1000, 700);
             
             // Roads
-            ctx.fillStyle = '#333';
-            ctx.fillRect(0, 250, canvas.width, 60);
-            ctx.fillRect(350, 0, 60, canvas.height);
+            ctx.fillStyle = '#2C2C2C';
+            ctx.fillRect(0, 280, 1000, 100);
+            ctx.fillRect(270, 0, 100, 700);
             
-            // Road lines
+            // Road markings
             ctx.strokeStyle = '#FFD700';
-            ctx.lineWidth = 3;
-            ctx.setLineDash([20, 15]);
+            ctx.lineWidth = 4;
+            ctx.setLineDash([30, 20]);
             ctx.beginPath();
-            ctx.moveTo(0, 280);
-            ctx.lineTo(canvas.width, 280);
+            ctx.moveTo(0, 330);
+            ctx.lineTo(1000, 330);
             ctx.stroke();
             ctx.beginPath();
-            ctx.moveTo(380, 0);
-            ctx.lineTo(380, canvas.height);
+            ctx.moveTo(320, 0);
+            ctx.lineTo(320, 700);
             ctx.stroke();
             ctx.setLineDash([]);
             
-            // Buildings
-            buildings.forEach(building => {
-              ctx.fillStyle = building.color;
-              ctx.fillRect(building.x, building.y, building.width, building.height);
-              ctx.strokeStyle = '#000';
-              ctx.lineWidth = 2;
-              ctx.strokeRect(building.x, building.y, building.width, building.height);
-              
-              // Door
-              ctx.fillStyle = '#8B4513';
-              ctx.fillRect(
-                building.x + building.width/2 - 15,
-                building.y + building.height - 30,
-                30,
-                30
-              );
-              
-              // Windows
-              ctx.fillStyle = isDaytime ? '#87CEEB' : '#FFD700';
-              for (let i = 0; i < 2; i++) {
-                for (let j = 0; j < 2; j++) {
-                  ctx.fillRect(
-                    building.x + 20 + i * 50,
-                    building.y + 20 + j * 30,
-                    25,
-                    20
-                  );
-                }
-              }
-              
-              // Name label
-              const dist = Math.sqrt(
-                Math.pow(player.x - (building.x + building.width/2), 2) +
-                Math.pow(player.y - (building.y + building.height/2), 2)
-              );
-              
-              if (dist < 100) {
-                ctx.fillStyle = 'rgba(0,0,0,0.7)';
-                ctx.fillRect(building.x, building.y - 30, building.width, 25);
-                ctx.fillStyle = '#FFF';
-                ctx.font = '12px monospace';
-                ctx.textAlign = 'center';
-                ctx.fillText(building.name, building.x + building.width/2, building.y - 12);
-                ctx.font = '10px monospace';
-                ctx.fillText('[E] to enter', building.x + building.width/2, building.y - 2);
-              }
+            // Sidewalks
+            ctx.fillStyle = '#696969';
+            ctx.fillRect(0, 270, 1000, 10);
+            ctx.fillRect(0, 380, 1000, 10);
+            ctx.fillRect(260, 0, 10, 700);
+            ctx.fillRect(370, 0, 10, 700);
+            
+            // Trees
+            trees.forEach(tree => {
+                // Trunk
+                ctx.fillStyle = '#654321';
+                ctx.fillRect(tree.x - 6, tree.y - 12, 12, 25);
+                // Leaves
+                ctx.fillStyle = '#228B22';
+                ctx.beginPath();
+                ctx.arc(tree.x, tree.y - 22, 22, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(tree.x - 15, tree.y - 18, 18, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(tree.x + 15, tree.y - 18, 18, 0, Math.PI * 2);
+                ctx.fill();
             });
             
-            // Player (pixel character)
-            drawPixelCharacter(ctx, player.x, player.y, player.direction, player.isMoving);
+            // Buildings
+            buildings.forEach(b => {
+                // Main building
+                ctx.fillStyle = b.color;
+                ctx.fillRect(b.x, b.y, b.w, b.h);
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(b.x, b.y, b.w, b.h);
+                
+                // Roof
+                ctx.fillStyle = '#654321';
+                ctx.beginPath();
+                ctx.moveTo(b.x - 12, b.y);
+                ctx.lineTo(b.x + b.w/2, b.y - 25);
+                ctx.lineTo(b.x + b.w + 12, b.y);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Door
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(b.x + b.w/2 - 18, b.y + b.h - 40, 36, 40);
+                ctx.strokeRect(b.x + b.w/2 - 18, b.y + b.h - 40, 36, 40);
+                
+                // Windows
+                ctx.fillStyle = isNight ? '#FFD700' : '#87CEEB';
+                for (let i = 0; i < 2; i++) {
+                    for (let j = 0; j < 2; j++) {
+                        const wx = b.x + 25 + i * 60;
+                        const wy = b.y + 25 + j * 40;
+                        ctx.fillRect(wx, wy, 35, 28);
+                        ctx.strokeRect(wx, wy, 35, 28);
+                        ctx.beginPath();
+                        ctx.moveTo(wx + 17, wy);
+                        ctx.lineTo(wx + 17, wy + 28);
+                        ctx.moveTo(wx, wy + 14);
+                        ctx.lineTo(wx + 35, wy + 14);
+                        ctx.stroke();
+                    }
+                }
+                
+                // Label if nearby
+                const dist = Math.sqrt(Math.pow(player.x - (b.x + b.w/2), 2) + Math.pow(player.y - (b.y + b.h/2), 2));
+                if (dist < 100) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+                    ctx.fillRect(b.x, b.y - 40, b.w, 35);
+                    ctx.fillStyle = '#FFF';
+                    ctx.font = 'bold 16px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(b.name, b.x + b.w/2, b.y - 22);
+                    ctx.font = '13px monospace';
+                    ctx.fillText('[E] Enter', b.x + b.w/2, b.y - 7);
+                }
+            });
             
-            // Random NPCs/enemies
-            if (enemies.length > 0) {
-              enemies.forEach(enemy => {
-                ctx.fillStyle = enemy.color || '#FF0000';
-                ctx.fillRect(enemy.x - 10, enemy.y - 15, 20, 30);
-                ctx.fillStyle = '#000';
-                ctx.fillRect(enemy.x - 8, enemy.y - 13, 4, 4);
-                ctx.fillRect(enemy.x + 4, enemy.y - 13, 4, 4);
-              });
-            }
-          };
-
-          const drawPixelCharacter = (ctx, x, y, direction, isMoving) => {
-            // Simple pixel character (8x16 pixels, scaled 3x)
-            const scale = 3;
-            const px = x - 12;
-            const py = y - 24;
+            // Player
+            drawPlayer(player.x, player.y, player.direction, player.frame);
+        }
+        
+        function drawPlayer(x, y, dir, frame) {
+            ctx.save();
             
-            // Body (blue hero suit)
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.beginPath();
+            ctx.ellipse(x, y + 30, 15, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.translate(x, y);
+            if (dir === 'left') ctx.scale(-1, 1);
+            
+            // Cape
+            ctx.fillStyle = '#FF0000';
+            ctx.fillRect(-20, 5, 40, 6);
+            const capeFlow = frame === 1 ? 25 : 30;
+            ctx.fillRect(-18, 11, 36, capeFlow);
+            
+            // Body
             ctx.fillStyle = '#0066FF';
-            ctx.fillRect(px + 9, py + 21, 6 * scale, 9 * scale);
+            ctx.fillRect(-15, 0, 30, 40);
             
-            // Head (skin tone)
+            // Head
             ctx.fillStyle = '#FFD1AA';
-            ctx.fillRect(px + 9, py + 9, 6 * scale, 6 * scale);
+            ctx.fillRect(-13, -25, 26, 25);
             
             // Hair
+            ctx.fillStyle = '#2C1810';
+            ctx.fillRect(-13, -30, 26, 8);
+            
+            // Mask
             ctx.fillStyle = '#000';
-            ctx.fillRect(px + 9, py + 6, 6 * scale, 3 * scale);
+            ctx.fillRect(-15, -18, 30, 8);
             
             // Eyes
-            ctx.fillStyle = '#000';
-            ctx.fillRect(px + 9, py + 12, 2 * scale, 2 * scale);
-            ctx.fillRect(px + 15, py + 12, 2 * scale, 2 * scale);
+            ctx.fillStyle = '#FFF';
+            ctx.fillRect(-10, -15, 6, 4);
+            ctx.fillRect(4, -15, 6, 4);
             
             // Arms
+            const armSwing = frame === 1 ? 4 : -4;
             ctx.fillStyle = '#0066FF';
-            if (isMoving) {
-              const offset = Math.sin(Date.now() / 100) * 3;
-              ctx.fillRect(px + 3, py + 21 + offset, 3 * scale, 6 * scale);
-              ctx.fillRect(px + 18, py + 21 - offset, 3 * scale, 6 * scale);
-            } else {
-              ctx.fillRect(px + 3, py + 21, 3 * scale, 6 * scale);
-              ctx.fillRect(px + 18, py + 21, 3 * scale, 6 * scale);
-            }
+            ctx.fillRect(-20, 5 + armSwing, 8, 25);
+            ctx.fillRect(12, 5 - armSwing, 8, 25);
             
             // Legs
+            const legSwing = frame === 1 ? 5 : -5;
             ctx.fillStyle = '#003399';
-            if (isMoving) {
-              const legOffset = Math.sin(Date.now() / 100) * 2;
-              ctx.fillRect(px + 9, py + 30 + legOffset, 3 * scale, 9 * scale);
-              ctx.fillRect(px + 12, py + 30 - legOffset, 3 * scale, 9 * scale);
-            } else {
-              ctx.fillRect(px + 9, py + 30, 3 * scale, 9 * scale);
-              ctx.fillRect(px + 12, py + 30, 3 * scale, 9 * scale);
-            }
+            ctx.fillRect(-12, 40 + legSwing, 10, 25);
+            ctx.fillRect(2, 40 - legSwing, 10, 25);
             
-            // Cape (if hero mode)
-            ctx.fillStyle = '#FF0000';
-            ctx.fillRect(px + 6, py + 18, 12 * scale, 2 * scale);
-          };
-
-          const enterBuilding = (buildingId) => {
-            setInBuilding(buildingId);
-            setGameScreen('building');
-          };
-
-          const exitBuilding = () => {
-            setInBuilding(null);
-            setGameScreen('world');
-          };
-
-          // Save/Load system
-          useEffect(() => {
-            loadSaveSlots();
-          }, []);
-
-          const loadSaveSlots = () => {
-            const saved = localStorage.getItem('novaSentinelSaves');
-            if (saved) {
-              setSaveSlots(JSON.parse(saved));
-            }
-          };
-
-          const createNewSave = () => {
-            if (newSaveName.trim() === '') {
-              showMessage("Please enter a save name!");
-              return;
-            }
-
-            if (saveSlots.length >= 4) {
-              showMessage("Maximum 4 save slots!");
-              return;
-            }
-
-            const newSlot = {
-              id: Date.now(),
-              name: newSaveName.trim(),
-              createdAt: new Date().toISOString(),
-              lastPlayed: new Date().toISOString(),
-              playTime: 0,
-              gameState: {
-                player,
-                inventory,
-                powers,
-                apartment,
-                gameTime,
-                playTime: 0
-              }
-            };
-
-            const updatedSlots = [...saveSlots, newSlot];
-            setSaveSlots(updatedSlots);
-            localStorage.setItem('novaSentinelSaves', JSON.stringify(updatedSlots));
+            // Boots
+            ctx.fillStyle = '#000';
+            ctx.fillRect(-12, 63 + legSwing, 10, 4);
+            ctx.fillRect(2, 63 - legSwing, 10, 4);
             
-            setCurrentSaveSlot(newSlot.id);
-            setShowSaveMenu(false);
-            setShowNewSaveDialog(false);
-            setNewSaveName('');
-            setGameScreen('menu');
-            showMessage(`New save "${newSlot.name}" created!`);
-          };
-
-          const loadSave = (slotId) => {
-            const slot = saveSlots.find(s => s.id === slotId);
-            if (!slot) return;
-
-            setPlayer(slot.gameState.player);
-            setInventory(slot.gameState.inventory);
-            setPowers(slot.gameState.powers);
-            setApartment(slot.gameState.apartment);
-            setGameTime(slot.gameState.gameTime);
-            setPlayTime(slot.gameState.playTime || 0);
-            
-            setCurrentSaveSlot(slotId);
-            setShowSaveMenu(false);
-            setGameScreen('menu');
-            showMessage(`Loaded save: ${slot.name}`);
-          };
-
-          const saveGame = () => {
-            if (currentSaveSlot === null) return;
-
-            const updatedSlots = saveSlots.map(slot => {
-              if (slot.id === currentSaveSlot) {
-                return {
-                  ...slot,
-                  lastPlayed: new Date().toISOString(),
-                  gameState: {
-                    player,
-                    inventory,
-                    powers,
-                    apartment,
-                    gameTime,
-                    playTime
-                  }
-                };
-              }
-              return slot;
-            });
-
-            setSaveSlots(updatedSlots);
-            localStorage.setItem('novaSentinelSaves', JSON.stringify(updatedSlots));
-            showMessage("Game saved!");
-          };
-
-          const deleteSave = (slotId) => {
-            if (!confirm("Are you sure you want to delete this save?")) return;
-
-            const updatedSlots = saveSlots.filter(s => s.id !== slotId);
-            setSaveSlots(updatedSlots);
-            localStorage.setItem('novaSentinelSaves', JSON.stringify(updatedSlots));
-            
-            if (currentSaveSlot === slotId) {
-              setCurrentSaveSlot(null);
-              setShowSaveMenu(true);
-              setGameScreen('menu');
-            }
-            
-            showMessage("Save deleted!");
-          };
-
-          const formatTime = (gameTime) => {
-            const hours = gameTime.hours.toString().padStart(2, '0');
-            const minutes = gameTime.minutes.toString().padStart(2, '0');
-            const period = gameTime.hours >= 12 ? 'PM' : 'AM';
-            const displayHours = gameTime.hours % 12 || 12;
-            return `${displayHours}:${minutes} ${period}`;
-          };
-
-          const formatPlayTime = (seconds) => {
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
-            if (hours > 0) return `${hours}h ${minutes}m`;
-            return `${minutes}m`;
-          };
-
-          const formatDate = (isoString) => {
-            const date = new Date(isoString);
-            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          };
-
-          const showMessage = (text) => {
-            setMessage(text);
-            setTimeout(() => setMessage(''), 3000);
-          };
-
-          // Render functions
-          const renderSaveMenu = () => (
-            <div className="flex flex-col items-center justify-center h-full bg-gradient-to-b from-purple-900 to-black text-white p-6 overflow-y-auto">
-              <h1 className="text-6xl font-bold mb-2 text-yellow-400" style={{ textShadow: '0 0 10px #FFD700' }}>
-                NOVA SENTINEL
-              </h1>
-              <p className="text-xl mb-8 text-gray-300">Select or Create Save File</p>
-              
-              <div className="w-full max-w-4xl space-y-4 mb-6">
-                {saveSlots.map(slot => (
-                  <div key={slot.id} className="bg-gray-800 p-4 rounded-lg flex items-center justify-between hover:bg-gray-700 transition-colors">
-                    <div className="flex-1">
-                      <h3 className="text-2xl font-bold text-yellow-400">{slot.name}</h3>
-                      <div className="text-sm text-gray-400 mt-1">
-                        <div>Level {slot.gameState.player.level} • ${slot.gameState.player.money}</div>
-                        <div>Day {slot.gameState.gameTime?.day || 1} • {formatTime(slot.gameState.gameTime || {hours:8,minutes:0})}</div>
-                        <div>Play Time: {formatPlayTime(slot.gameState.playTime)}</div>
-                        <div>Last Played: {formatDate(slot.lastPlayed)}</div>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => loadSave(slot.id)}
-                        className="px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold"
-                      >
-                        Load
-                      </button>
-                      <button
-                        onClick={() => deleteSave(slot.id)}
-                        className="px-4 py-3 bg-red-600 hover:bg-red-700 rounded-lg"
-                      >
-                        <Trash2 size={20} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                
-                {saveSlots.length === 0 && (
-                  <div className="text-center text-gray-400 py-8">
-                    No save files yet. Create one to start playing!
-                  </div>
-                )}
-              </div>
-              
-              {saveSlots.length < 4 && (
-                <button
-                  onClick={() => setShowNewSaveDialog(true)}
-                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-xl font-bold flex items-center gap-2"
-                >
-                  <Plus size={24} />
-                  Create New Save
-                </button>
-              )}
-              
-              {saveSlots.length >= 4 && (
-                <p className="text-gray-400">Maximum save slots reached (4/4)</p>
-              )}
-            </div>
-          );
-
-          const renderNewSaveDialog = () => (
-            <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
-              <div className="bg-gray-800 p-8 rounded-lg max-w-md w-full text-white">
-                <h2 className="text-3xl font-bold mb-4 text-yellow-400">Create New Save</h2>
-                <input
-                  type="text"
-                  value={newSaveName}
-                  onChange={(e) => setNewSaveName(e.target.value)}
-                  placeholder="Enter save name..."
-                  maxLength={20}
-                  className="w-full px-4 py-3 bg-gray-700 rounded mb-4 text-white text-lg"
-                  autoFocus
-                  onKeyPress={(e) => e.key === 'Enter' && createNewSave()}
-                />
-                <div className="flex gap-3">
-                  <button
-                    onClick={createNewSave}
-                    className="flex-1 py-3 bg-green-600 hover:bg-green-700 rounded font-bold"
-                  >
-                    Create
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowNewSaveDialog(false);
-                      setNewSaveName('');
-                    }}
-                    className="flex-1 py-3 bg-gray-600 hover:bg-gray-700 rounded font-bold"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-
-          const renderMenu = () => (
-            <div className="flex flex-col items-center justify-center h-full bg-gradient-to-b from-purple-900 to-black text-white">
-              <h1 className="text-6xl font-bold mb-4 text-yellow-400" style={{ textShadow: '0 0 10px #FFD700' }}>
-                NOVA SENTINEL
-              </h1>
-              <p className="text-xl mb-8 text-gray-300">Open World Superhero RPG</p>
-              <div className="space-y-4">
-                <button
-                  onClick={() => setGameScreen('world')}
-                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-xl font-bold w-64"
-                >
-                  Enter World
-                </button>
-                <button
-                  onClick={saveGame}
-                  className="px-8 py-3 bg-green-600 hover:bg-green-700 rounded-lg text-xl font-bold w-64 flex items-center justify-center gap-2"
-                >
-                  <Save size={24} />
-                  Save Game
-                </button>
-                <button
-                  onClick={() => {
-                    saveGame();
-                    setShowSaveMenu(true);
-                  }}
-                  className="px-8 py-3 bg-gray-600 hover:bg-gray-700 rounded-lg text-xl font-bold w-64"
-                >
-                  Save Menu
-                </button>
-                <div className="text-center text-sm text-gray-400 mt-4">
-                  <p>Day {gameTime.day} • {formatTime(gameTime)}</p>
-                  <p className="mt-2">Play Time: {formatPlayTime(playTime)}</p>
-                </div>
-              </div>
-            </div>
-          );
-
-          const renderWorld = () => (
-            <div className="relative w-full h-full bg-black">
-              <canvas
-                ref={canvasRef}
-                width={800}
-                height={600}
-                className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
-                style={{ border: '2px solid #333' }}
-              />
-            </div>
-          );
-
-          const renderBuilding = () => {
-            if (inBuilding === 'home') {
-              return (
-                <div className="h-full bg-gradient-to-b from-orange-700 to-orange-900 p-6 text-white overflow-y-auto">
-                  <h2 className="text-3xl font-bold mb-4 text-center">Your Apartment</h2>
-                  
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className="bg-orange-800 p-6 rounded-lg">
-                      <h3 className="text-2xl font-bold mb-2">🛏️ Bed</h3>
-                      <p className="text-sm mb-4">Rest and restore energy</p>
-                      <button className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded">
-                        Sleep (Coming Soon)
-                      </button>
-                    </div>
-                    
-                    <div className="bg-orange-800 p-6 rounded-lg">
-                      <h3 className="text-2xl font-bold mb-2">💻 Laptop</h3>
-                      <p className="text-sm mb-4">Search for jobs</p>
-                      <button className="w-full py-2 bg-green-600 hover:bg-green-700 rounded">
-                        Job Search (Coming Soon)
-                      </button>
-                    </div>
-                    
-                    <div className="bg-orange-800 p-6 rounded-lg">
-                      <h3 className="text-2xl font-bold mb-2">🖥️ PC</h3>
-                      <p className="text-sm mb-4">Play games, gain happiness</p>
-                      <button className="w-full py-2 bg-purple-600 hover:bg-purple-700 rounded">
-                        Play Games (Coming Soon)
-                      </button>
-                    </div>
-                    
-                    <div className="bg-orange-800 p-6 rounded-lg">
-                      <h3 className="text-2xl font-bold mb-2">📊 Stats</h3>
-                      <div className="text-sm">
-                        <div>Energy: {Math.floor(player.energy)}/{player.maxEnergy}</div>
-                        <div>Happiness: {Math.floor(player.happiness)}/{player.maxHappiness}</div>
-                        <div>Money: ${player.money}</div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <button
-                    onClick={exitBuilding}
-                    className="w-full py-3 bg-red-600 hover:bg-red-700 rounded font-bold"
-                  >
-                    Exit Apartment [E]
-                  </button>
-                </div>
-              );
-            }
-            
-            return (
-              <div className="h-full bg-gray-800 p-6 text-white text-center">
-                <h2 className="text-3xl font-bold mb-4">{buildings.find(b => b.id === inBuilding)?.name}</h2>
-                <p className="mb-6">This location is under construction!</p>
-                <button
-                  onClick={exitBuilding}
-                  className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded font-bold"
-                >
-                  Exit [E]
-                </button>
-              </div>
-            );
-          };
-
-          const renderHUD = () => {
-            if (gameScreen === 'menu' || showSaveMenu) return null;
-            
-            return (
-              <div className="absolute top-0 left-0 right-0 bg-black bg-opacity-80 text-white p-3 z-20">
-                <div className="grid grid-cols-5 gap-4 text-sm">
-                  <div>
-                    <div className="font-bold text-yellow-400">{formatTime(gameTime)}</div>
-                    <div className="text-xs">Day {gameTime.day}</div>
-                  </div>
-                  
-                  <div>
-                    <div className="font-bold">Level {player.level}</div>
-                    <div className="text-xs">XP: {player.xp}/{player.xpToNext}</div>
-                  </div>
-                  
-                  <div>
-                    <div className="font-bold text-red-500">HP: {player.health}/{player.maxHealth}</div>
-                    <div className="w-full h-2 bg-gray-700 rounded overflow-hidden">
-                      <div className="h-full bg-red-500" style={{ width: `${(player.health / player.maxHealth) * 100}%` }} />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <div className="font-bold text-blue-500">Energy: {Math.floor(player.energy)}/{player.maxEnergy}</div>
-                    <div className="w-full h-2 bg-gray-700 rounded overflow-hidden">
-                      <div className="h-full bg-blue-500" style={{ width: `${(player.energy / player.maxEnergy) * 100}%` }} />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <div className="font-bold text-pink-400">😊 {Math.floor(player.happiness)}/{player.maxHappiness}</div>
-                    <div className="text-xs text-yellow-400">${player.money}</div>
-                  </div>
-                </div>
-                
-                {gameScreen === 'world' && (
-                  <div className="text-center text-xs mt-2 text-gray-400">
-                    WASD to move • E to interact • ESC for menu
-                  </div>
-                )}
-              </div>
-            );
-          };
-
-          if (showSaveMenu) {
-            return (
-              <div className="w-full h-screen bg-black relative overflow-hidden">
-                {renderSaveMenu()}
-                {showNewSaveDialog && renderNewSaveDialog()}
-                {message && (
-                  <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-90 text-white px-6 py-3 rounded-lg font-bold text-center z-50">
-                    {message}
-                  </div>
-                )}
-              </div>
-            );
-          }
-
-          return (
-            <div className="w-full h-screen bg-black relative overflow-hidden">
-              {renderHUD()}
-              
-              <div className="w-full h-full">
-                {gameScreen === 'menu' && renderMenu()}
-                {gameScreen === 'world' && renderWorld()}
-                {gameScreen === 'building' && renderBuilding()}
-              </div>
-              
-              {message && (
-                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-90 text-white px-6 py-3 rounded-lg font-bold text-center z-50">
-                  {message}
-                </div>
-              )}
-            </div>
-          );
-        };
-
-        ReactDOM.render(<NovaGameRPG />, document.getElementById('root'));
+            ctx.restore();
+        }
+        
+        gameLoop();
     </script>
 </body>
 </html>
